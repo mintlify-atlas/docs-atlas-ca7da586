@@ -1,7 +1,7 @@
 ---
 title: "Sorting Algorithms: HeapSort, ShellSort, QuickSort, and More"
 sidebarTitle: "Sorting"
-description: "LYNX implements six sorting algorithms without STL: HeapSort and ShellSort as generics, plus QuickSort, MergeSort, TimSort, and CountingSort for domain types."
+description: "LYNX provides six sorting algorithms: generic HeapSort and ShellSort, plus QuickSort, MergeSort, TimSort, and CountingSort for domain-specific types."
 ---
 
 LYNX organizes its sorting logic into two distinct layers. The first layer, `AdvancedSorts<T>` (in `include/AdvancedSorts.h`), provides fully generic HeapSort and ShellSort that operate on any raw array `T* arr` and accept optional lambda comparators. The second layer, `AdvancedOrders<T>` (in `include/AdvancedOrders.h`), provides domain-specific algorithms — QuickSort, MergeSort, TimSort, and CountingSort — that work directly on `LinkedList<T>*` of passengers, drivers, or raw `Trip[]` arrays, handling the extract-sort-rebuild cycle internally. Together, these two classes cover every sorting need in the system without relying on the C++ Standard Library.
@@ -23,9 +23,9 @@ static void heapSort(T* arr, int size, Compare compare);
 
 HeapSort runs in **O(n log n)** time in all cases and uses **O(1)** extra space. The default overload builds a max-heap using `operator>`, then repeatedly swaps the root (the current maximum) to the end of the unsorted region and calls `heapify` to restore the heap property.
 
-The comparator overload passes `compare` down into `heapify`, where it replaces the `>` check. The comparator should return `true` if the first argument should be treated as "larger" in the heap — meaning it will ultimately sort to a lower index (i.e., come first in the final array). To sort descending by rating, pass `a.getRating() > b.getRating()`.
+The comparator overload passes `compare` down into `heapify`, where it replaces the `>` check. Inside `heapify`, the condition `compare(arr[root], arr[child])` triggers a swap if true — meaning the child is treated as the heap's "larger" node and migrates toward the root, while the root element migrates toward the end of the array. Because heap extraction places the root at the tail on each pass, the elements that `compare` never selects as "larger" end up at the front. In practice: `compare(a, b) = true` means `a` should appear **before** `b` in the final sorted array. To sort descending by rating, pass `a.getRating() > b.getRating()`.
 
-**Comparator signature:**
+**HeapSort comparator signature:**
 
 ```cpp
 bool compare(const T& a, const T& b); // returns true if a should appear before b
@@ -42,15 +42,32 @@ static void shellSort(T* arr, int size, Compare compare);
 
 ShellSort uses a halving gap sequence (`gap = size/2`, then `gap /= 2` each pass) and runs in **O(n log²n)** average time with **O(1)** space. The default overload uses `operator>` to compare; the comparator overload passes `compare` into the inner while-loop condition.
 
-### Usage Example
+<Warning>
+  **ShellSort and HeapSort use opposite comparator conventions.** In `shellSort`, `compare(a, b)` replaces the `>` guard in the shift loop: when `compare(a, b)` returns `true`, element `a` is shifted rightward past `b`, so `b` ends up at the lower index — meaning **`b` comes before `a`** in the output. This is the opposite of `heapSort`, where `compare(a, b) = true` means `a` comes before `b`. To sort descending by rating with `shellSort`, pass `a.getRating() < b.getRating()`; with `heapSort`, pass `a.getRating() > b.getRating()`.
+</Warning>
+
+**ShellSort comparator signature:**
+
+```cpp
+bool compare(const T& a, const T& b); // returns true if a should appear AFTER b (b comes first)
+```
+
+### Usage Examples
 
 ```cpp
 Driver* arr = driverList->toArray();
 int n = driverList->getSize();
 
-// Sort drivers by rating descending
+// heapSort: compare(a,b)=true means a comes BEFORE b
+// Sort drivers by rating descending with heapSort
 AdvancedSorts<Driver>::heapSort(arr, n, [](const Driver& a, const Driver& b) {
     return a.getRating() > b.getRating(); // higher rating first
+});
+
+// shellSort: compare(a,b)=true means a is shifted right — b comes BEFORE a
+// Sort drivers by rating descending with shellSort
+AdvancedSorts<Driver>::shellSort(arr, n, [](const Driver& a, const Driver& b) {
+    return a.getRating() < b.getRating(); // shift lower ratings right → higher ratings first
 });
 
 driverList->fromArray(arr, n);
@@ -70,6 +87,10 @@ delete[] arr;
 | `mergeSortTripsByPrice(Trip* arr, int n)` | Merge Sort | Raw `Trip[]` | `price` | Descending |
 | `timSortPassengersByTrips(LinkedList<Passenger>*)` | Tim Sort (Insertion + Merge) | `LinkedList<Passenger>` | `totalTrips` | Descending |
 | `countingSortDriversByTrips(LinkedList<Driver>*)` | Counting Sort | `LinkedList<Driver>` | `totalTrips` | Descending |
+
+<Note>
+  The method name `shellSortDriverssByEarnings` contains a double-s (`Driverss`) — this is a typo in the source file (`AdvancedOrders.h`) that has been preserved as-is. Call sites must use the exact name `shellSortDriverssByEarnings` with two s's or the code will not compile.
+</Note>
 
 ### QuickSort — passengers by total spent
 

@@ -1,10 +1,10 @@
 ---
 title: "Driver Role: Availability, Ride Acceptance, and Earnings"
 sidebarTitle: "Driver"
-description: "Drivers in LYNX manage a vehicle, toggle availability, accept trips from the waiting queue, complete rides, and track their rating and total earnings."
+description: "Drivers in LYNX manage a vehicle, toggle availability, log trips manually, track gross and net earnings, and maintain a passenger-updated star rating."
 ---
 
-A Driver is a service provider in the LYNX platform who is paired with a registered vehicle. Unlike Passengers who self-register, drivers are enrolled through the Administrator menu, which ensures every driver account includes verified vehicle details before being made available for trip assignment. Drivers are identified by their DNI, stored in a `LinkedList` in memory, and persisted to `assets/drivers.txt`. They are also indexed in a `BinarySearchTree` sorted by vehicle plate for fast plate-based lookups.
+A Driver is a service provider in the LYNX platform who is paired with a registered vehicle. Drivers authenticate with their DNI and password, then access a dedicated menu to register trips, view their completed-trip history, manage availability, and monitor earnings. Driver records are stored in memory and persisted to `assets/drivers.txt` between sessions.
 
 ## Driver Profile
 
@@ -12,7 +12,7 @@ Every Driver record contains the following fields, sourced directly from `Driver
 
 | Field | Type | Description | Default |
 |---|---|---|---|
-| `driverId` | `string` | Auto-generated identifier in the format `DRV-XXXX` | Generated on registration |
+| `driverId` | `string` | Auto-generated identifier in the format `DRV-XXXX` (4 digits) | Generated on registration |
 | `name` | `string` | Full display name of the driver | — |
 | `dni` | `string` | 8-digit national identity number used as the login key | — |
 | `password` | `string` | Login credential | — |
@@ -36,35 +36,35 @@ Each Driver has exactly one associated `Vehicle`. The `Vehicle` class (defined i
 | `color` | `string` | Exterior colour |
 | `year` | `int` | Model year |
 
-Vehicles are indexed in a `BinarySearchTree` sorted by plate, which allows the system to perform efficient plate-based lookups without scanning the full driver list. The plate is also the key used by `Vehicle::getCodigo()` to integrate with generic sorted containers.
+The `Vehicle` class exposes two plate getters: `getPlate()` (non-const, for general access) and `getPlates()` (const, for read-only contexts such as sorted container keys and const method calls).
 
 ## Driver Registration
 
-Driver registration is an admin-only action. The Administrator is responsible for gathering all necessary information, including vehicle details, before the account is created.
+Drivers register themselves directly from the driver entry menu, following the same self-service flow used by passengers. The system prompts for driver details and vehicle information before creating the account.
 
 <Steps>
-  <Step title="Open the Administrator menu">
-    Log in as an Administrator and navigate to the **Administrator Panel**. From there, select the driver registration workflow.
+  <Step title="Open the Driver entry screen">
+    At the main menu, select **"Soy conductor"** and then choose **"Registrarme"**.
   </Step>
   <Step title="Enter driver details">
-    Provide the driver's full name, 8-digit DNI, and password. The system validates the DNI length via `AuthManager::validateDni(DNI)`.
+    Provide your full name, 8-digit DNI, and a password. The system validates the DNI length via `AuthManager::validateDni(DNI)`.
   </Step>
   <Step title="Enter vehicle details">
-    Supply the vehicle's plate, brand, model, colour, and year. The year must be within an accepted range (2005–2026 in the console flow).
+    Supply the vehicle's plate, brand, model, colour, and year. The year must be within the accepted range (2005–2026 in the console flow).
   </Step>
   <Step title="Account is created">
-    `AuthManager::registerDriver(name, DNI, password, vehicle)` constructs a `Driver` object with an auto-generated `DRV-XXXX` identifier, initialises `rating` to `5.0`, `isAvailable` to `true`, and `totalEarnings` / `totalTrips` to zero. The record is saved to `assets/drivers.txt`.
+    `AuthManager::registerDriver(name, DNI, password, vehicle)` constructs a `Driver` object with an auto-generated `DRV-XXXX` identifier, initialises `rating` to `5.0`, `isAvailable` to `true`, and both `totalEarnings` and `totalTrips` to zero. The record is saved to `assets/drivers.txt`.
   </Step>
 </Steps>
 
 ## Driver Menu Actions
 
-After logging in with their DNI and password, the following actions are available to the driver, as defined in `DriverMenuForm.h` and `MainMenu.h`:
+After logging in with their DNI and password, the following actions are available, as defined in `MainMenu.h`:
 
-- **Register manual trip** — the driver can log a completed trip manually by entering origin, destination, distance, and fare tier. The system creates a `Trip` with status `"completado"` and pushes it directly onto the history stack. Earnings and trip count are updated immediately via `Driver::acceptRide(price)` and `Driver::finishRide()`.
-- **View completed trips** — displays the driver's trip history, filtered from the global history stack by the driver's DNI.
-- **Toggle availability / finish trip** — if the driver has an active trip, this action calls `TripManager::finishTrip(tripId, authManager)` and marks the driver available. If no active trip exists, availability is set to `true` directly via `AuthManager::setDriverAvailability(dni, true)`.
-- **View earnings** — shows gross earnings, platform commission (20 %), and net earnings. The net value is computed by the lambda inside `Driver::getNetEarnings()`:
+- **Registrar Viaje Manual** — the driver logs a completed trip by entering origin, destination, distance (km), and fare tier. The system creates a `Trip` with status `"completado"` and pushes it directly onto the history stack. `Driver::acceptRide(price)` increments `totalTrips` and `totalEarnings` and sets `isAvailable = false`; `Driver::finishRide()` immediately sets `isAvailable = true`.
+- **Ver Carreras Hechas** — displays the driver's trip history, filtered from the global history stack by the driver's DNI.
+- **Cambiar a Disponible / Finalizar Viaje** — if the driver has an active trip, this action calls `TripManager::finishTrip(tripId, authManager)` and marks the driver available. If no active trip exists, availability is set to `true` directly via `AuthManager::setDriverAvailability(dni, true)`.
+- **Ver mis Ganancias** — shows gross earnings, platform commission (20 %), and net earnings. The net value is computed by the lambda inside `Driver::getNetEarnings()`:
 
 ```cpp
 // From Driver.h
@@ -76,8 +76,8 @@ float getNetEarnings() {
 }
 ```
 
-- **View profile** — displays the driver's full summary including vehicle details.
-- **Log out** — ends the driver session and returns to the main menu.
+- **Perfil** — displays the driver's full summary including vehicle details.
+- **Cerrar sesion** — ends the driver session and returns to the main menu.
 
 ## Rating System
 
@@ -94,7 +94,7 @@ void updateRating(float nuevaCalif) {
 }
 ```
 
-Ratings are persisted via `AuthManager::updateDriverRating(dni, newRating)`. For reporting purposes, administrators can sort all drivers by rating using `AuthManager::sortDriversByRating()` (ShellSort) or by earnings using a secondary ShellSort pass.
+Ratings are persisted via `AuthManager::updateDriverRating(dni, newRating)`. Administrators can sort all drivers by rating using `AuthManager::sortDriversByRating()` (ShellSort, descending).
 
 <Tip>
   `TripManager::matchBestDriver(authManager)` scans the full driver list and selects the available driver with the highest rating for automatic trip assignment. Keeping your rating high directly increases the probability of being matched first when a passenger requests a ride.

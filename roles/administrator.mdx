@@ -1,92 +1,102 @@
 ---
 title: "Administrator Role: Full System Control and Reporting"
 sidebarTitle: "Administrator"
-description: "Administrators in LYNX have full access to trip management, user/driver registrations, route validation, sorting reports, and system-wide statistics."
+description: "Administrators in LYNX use a 12-action panel to list users, sort data, view platform statistics, inspect trip queues, and audit binary password records."
 ---
 
-The Administrator role in LYNX has unrestricted access to every system function. Administrators can manage passengers and drivers, oversee the full trip lifecycle (from the waiting queue through to completed history), validate and calculate routes on the city graph, run sorting algorithms across any data set, and view platform-wide earnings reports. All admin actions are available from the Administrator Panel, accessible after authenticating with an admin username and password.
+The Administrator role in LYNX provides unrestricted access to system data and reporting. Administrators can list all passengers and drivers, inspect every trip across the waiting queue, active trips, and history, search for passengers by DNI, run sorting algorithms across any data set, view platform-wide statistics, and audit password records stored in binary format. All admin actions are available from the Administrator Panel, which is accessible from the main menu under **"Administracion"**.
 
 ## Admin Credentials
 
 Admin accounts are stored across two files:
 
-- **`assets/admins.txt`** — plain-text file holding one record per line in the format `ADM-XXX|username|password`. For example: `ADM-001|Yeremy|admin777`.
+- **`assets/admins.txt`** — plain-text file holding one record per line in the format `ADM-XXX|username|password` (3-digit zero-padded numeric suffix). For example: `ADM-001|Yeremy|admin777`.
 - **`assets/passwords.bin`** — binary file that stores a separate password snapshot. This binary store is written by `AuthManager::savePasswordsBinary()` and read back by `AuthManager::readPasswordsBinary()`.
 
-Login is handled by `AuthManager::loginAdminValid(username, password)`, which reads the admin list and validates credentials at startup.
+Login is handled by `AuthManager::loginAdminValid(username, password)`, which looks up the admin by username and validates the plain-text password against the stored record.
 
-## Administrator Menu
+## Administrator Panel
 
-The Administrator Panel groups all available actions into four functional areas.
+The panel presents 12 numbered actions navigated with the arrow keys. Pressing Enter on the highlighted option executes the corresponding function.
 
-<AccordionGroup>
-  <Accordion title="User Management">
-    All passenger and driver lifecycle operations are available here.
+| # | Menu Item | Function Called |
+|---|---|---|
+| 1 | List all passengers | `AdministratorMenu::listarUsuarios()` |
+| 2 | List all drivers | `AdministratorMenu::listarConductores()` |
+| 3 | List all trips | `AdministratorMenu::listarViajes()` |
+| 4 | Search passenger by DNI | `AdministratorMenu::buscarUsuario()` |
+| 5 | Sort drivers by rating | `AdministratorMenu::ordenarConductores()` |
+| 6 | Top drivers (rating ≥ 4.0) | `AdministratorMenu::topConductores()` |
+| 7 | General statistics | `AdministratorMenu::estadisticas()` |
+| 8 | Sort passengers by total spending | `AdministratorMenu::ordenarPasajeros()` |
+| 9 | Sort passengers by ID | `AdministratorMenu::ordenarPasajerosPorId()` |
+| 10 | Sort drivers by ID | `AdministratorMenu::ordenarConductoresPorId()` |
+| 11 | Sort active trips by price | `AdministratorMenu::ordenarViajesActivos()` |
+| 12 | View passwords in binary | `AdministratorMenu::verPasswordsBinarias()` |
 
-    **Passengers**
-    - Register a new passenger (`AuthManager::registerPassenger`)
-    - Delete a passenger record
-    - View all passengers — sortable by ID (`sortPassengersById`), total spent (`sortUsersBySpent`), or trip count
-    - Search for a passenger by DNI using `LinkedList::findFirst` for an exact-match lookup
+### List all passengers (1)
 
-    **Drivers**
-    - Register a new driver with vehicle details (`AuthManager::registerDriver`)
-    - Delete a driver record
-    - View all drivers — sortable by rating (`sortDriversByRating`) or total earnings
-    - Search for a driver by DNI
-  </Accordion>
+Iterates the passenger `LinkedList` with `forEach` and prints each record using `Passenger::toString()`.
 
-  <Accordion title="Trip Management">
-    Full control over the three trip containers: the waiting queue, the active trips list, and the history stack.
+### List all drivers (2)
 
-    - **View waiting queue** — lists all `"pendiente"` trips currently in the `Queue<Trip>`, rendered by `TripManager::viewWaitingDetailed()`
-    - **View active trips** — lists all `"en_curso"` trips in the `DoublyLinkedList<Trip>`, rendered by `TripManager::viewActive()`
-    - **View trip history** — displays completed and cancelled trips from the `Stack<Trip>`, rendered by `TripManager::viewHistory()`
-    - **Assign driver to next waiting trip** — dequeues the front trip and assigns the best available driver via `TripManager::assignDriver(driverDni, authManager)`
-    - **Cancel a waiting trip** — removes the trip from the queue
-    - **Cancel an active trip** — removes the trip from the active list
-    - **Search trip by ID** — binary search across sorted trip arrays
-    - **Search trips by price range** — AVL Tree lookup using `txtPrecioMin` / `txtPrecioMax` inputs in `AdminMenuForm`
-    - **View platform earnings** — calls `TripManager::getTotalPlatformEarnings()`, which applies the 20 % platform commission to all completed trip fares
-  </Accordion>
+Iterates the driver `LinkedList` with `forEach` and prints each record using `Driver::toString()`.
 
-  <Accordion title="Route and Map">
-    The city graph underpins all distance calculations and route validation in LYNX.
+### List all trips (3)
 
-    - **Validate a route** — calls `TripManager::validateRoute(origin, destination)`, which returns a `RouteResult` struct indicating whether both cities exist in the graph and whether a connected path exists between them
-    - **Calculate distance** — Dijkstra's algorithm computes the shortest path in kilometres between any two cities; the result is surfaced in `RouteResult::kilometers`
-    - **List available cities** — `TripManager::getCityNames()` returns the full list of cities loaded into the graph, which is used to populate the origin and destination combo boxes throughout the UI
-  </Accordion>
+Calls `TripManager::viewWaitingDetailed()`, `TripManager::viewActive()`, and `TripManager::viewHistory()` to display trips across all three containers (waiting queue, active list, and history stack). Also shows the platform's cumulative 20 % commission earnings via `TripManager::getTotalPlatformEarnings()`.
 
-  <Accordion title="Sorting and Reports">
-    Administrators can sort any data set on demand. Each sort is applied to the in-memory list and the result is displayed immediately.
+### Search passenger by DNI (4)
 
-    **Drivers**
-    - Sort by rating — `AuthManager::sortDriversByRating()` (ShellSort, descending)
-    - Sort by earnings — ShellSort on `totalEarnings`
-    - Sort by trip count — CountingSort on `totalTrips`
+Uses `LinkedList::findFirst` to locate the passenger whose `dni` matches the input. If found, also retrieves that passenger's most recent trip via `TripManager::getLastTripByPassenger(dni)` and displays it alongside the passenger record.
 
-    **Passengers**
-    - Sort by total spending — `AuthManager::sortUsersBySpent()` (Insertion Sort, descending)
-    - Sort by trip count — TimSort on `totalTrips`
-    - Sort by ID — `AuthManager::sortPassengersById()`
+### Sort drivers by rating (5)
 
-    **Platform Statistics** — `AdministratorMenu::estadisticas()` calls both `AuthManager::mostrarResumen()` and `TripManager::mostrarEstadoCola()` to display:
+Applies ShellSort (descending) via `AuthManager::sortDriversByRating()` and prints the driver list before and after to show the effect of the sort.
 
-    ```cpp
-    // From AdministratorMenu.h
-    int disponibles = authMgr->contarConductoresDisponibles(0);
-    float ganancia  = tripMgr->getTotalPlatformEarnings();
+### Top drivers — rating ≥ 4.0 (6)
 
-    fila("Conductores disponibles", to_string(disponibles));
-    fila("Viajes en espera",        to_string(tripMgr->getTotalWaiting()));
-    fila("Viajes activos",          to_string(tripMgr->getTotalActiveTrips()));
-    fila("Viajes en historial",     to_string(tripMgr->getTotalHistoryTrips()));
-    fila("Ganancia plataforma",     "S/ " + to_string(ganancia));
-    fila("Monto total en cola",     "S/ " + to_string(tripMgr->calcTotalEnCola()));
-    ```
-  </Accordion>
-</AccordionGroup>
+Scans the driver list with a lambda filter and displays only drivers whose rating is 4.0 or higher.
+
+### General statistics (7)
+
+Aggregates system-wide metrics and displays them in a single screen. The output is produced by `AdministratorMenu::estadisticas()`:
+
+```cpp
+// From AdministratorMenu.h
+int disponibles = authMgr->contarConductoresDisponibles(0);
+float ganancia  = tripMgr->getTotalPlatformEarnings();
+
+fila("Conductores disponibles", to_string(disponibles));
+fila("Viajes en espera",        to_string(tripMgr->getTotalWaiting()));
+fila("Viajes activos",          to_string(tripMgr->getTotalActiveTrips()));
+fila("Viajes en historial",     to_string(tripMgr->getTotalHistoryTrips()));
+fila("Ganancia plataforma",     "S/ " + to_string(ganancia));
+fila("Monto total en cola",     "S/ " + to_string(tripMgr->calcTotalEnCola()));
+fila("Viajes en curso",         to_string(tripMgr->contarViajesEnCurso()));
+```
+
+`authMgr->contarConductoresDisponibles(0)` is a recursive method that walks the driver list counting available drivers. `tripMgr->getTotalPlatformEarnings()` applies the 20 % commission to all completed trip fares.
+
+### Sort passengers by total spending (8)
+
+Applies Insertion Sort (descending) via `AuthManager::sortUsersBySpent()` and prints passenger names and totals before and after the sort.
+
+### Sort passengers by ID (9)
+
+Applies `AuthManager::sortPassengersById()` and lists each passenger's `PAS-XXXX` code, name, and DNI in the resulting order.
+
+### Sort drivers by ID (10)
+
+Applies `AuthManager::sortDriversById()` and lists each driver's `DRV-XXXX` code, name, and DNI in the resulting order.
+
+### Sort active trips by price (11)
+
+Applies a sort on the active `DoublyLinkedList<Trip>` via `TripManager::sortActiveTripsByPrice()` and shows each trip's ID and price before and after.
+
+### View passwords in binary (12)
+
+Calls `AuthManager::savePasswordsBinary()` to write the current snapshot to `assets/passwords.bin`, then reads it back with `AuthManager::readPasswordsBinary()` and displays each entry's type, ID, DNI, and binary-encoded password string on screen.
 
 ## Security Note
 
@@ -94,17 +104,15 @@ The Administrator Panel groups all available actions into four functional areas.
   Admin passwords are stored in **binary format** inside `assets/passwords.bin`. This file must **not** be edited manually — the binary layout is written and parsed exclusively by `AuthManager::savePasswordsBinary()` and `AuthManager::readPasswordsBinary()`. Editing the file with a text editor will corrupt the binary records and prevent all admin logins. If the file is lost or corrupted, it must be regenerated by running the application with a valid `admins.txt` present and triggering a save cycle.
 </Warning>
 
-## Creating an Admin
+## Creating an Admin Account
 
-New administrator accounts are created programmatically through `AuthManager::registerAdmin(username, password)`. The method generates a sequential `ADM-XXX` identifier (e.g. `ADM-116`), appends the record to `assets/admins.txt`, and writes an updated snapshot to `assets/passwords.bin`.
-
-The format written to `admins.txt` is:
+New administrator accounts are created programmatically via `AuthManager::registerAdmin(username, password)`. The method generates a sequential `ADM-XXX` identifier (e.g. `ADM-116`) using `FileManager::generarIdAdmin(contador)`, which zero-pads the counter to 3 digits with `setw(3)`. The record is appended to `assets/admins.txt` in the pipe-delimited format:
 
 ```
 ADM-XXX|username|password
 ```
 
-For example, the first few entries in the live data file look like:
+The first few entries in the live data file illustrate the format:
 
 ```
 ADM-001|Yeremy|admin777
@@ -115,16 +123,16 @@ ADM-003|Melissa|heichahi
 ## Key Admin Capabilities
 
 <CardGroup cols={2}>
-  <Card title="User Management" icon="users">
-    Register, delete, and search passengers and drivers. Sort user lists by ID, spending, trip count, or rating for quick reporting.
+  <Card title="User Visibility" icon="users">
+    List and search all registered passengers and drivers. Sort passenger lists by ID or total spending, and driver lists by rating or ID, for quick reporting.
   </Card>
-  <Card title="Trip Oversight" icon="route">
-    Monitor the full trip lifecycle across the waiting queue, active trips list, and history stack. Manually assign drivers or cancel any trip at any stage.
+  <Card title="Trip Overview" icon="route">
+    Inspect all trips across the waiting queue, active trips list, and history stack in a single view, including the platform's cumulative commission earnings.
   </Card>
-  <Card title="Route Validation" icon="map">
-    Validate connectivity between any two cities on the graph and calculate the Dijkstra shortest-path distance in kilometres before committing a trip.
+  <Card title="Sorting and Reports" icon="chart-bar">
+    Run on-demand sort algorithms — ShellSort on drivers, Insertion Sort on passengers, price sort on active trips — and view live platform statistics.
   </Card>
-  <Card title="System Reports" icon="chart-bar">
-    Run on-demand sort algorithms across all data sets and view live platform statistics including available driver count, queue totals, and cumulative 20 % commission earnings.
+  <Card title="Security Audit" icon="lock">
+    Trigger a binary password snapshot at any time and review each account's binary-encoded credential directly from the administrator panel.
   </Card>
 </CardGroup>

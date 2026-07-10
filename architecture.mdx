@@ -1,7 +1,7 @@
 ---
 title: "LYNX System Architecture: Modules, Structures, and Data Flow"
 sidebarTitle: "Architecture"
-description: "Explore how LYNX connects its data structures, system modules, and user roles into a complete ride-management application."
+description: "Explore how LYNX connects its custom data structures, system modules, and user roles to form a complete ride-management application built in C++."
 ---
 
 LYNX is built in four distinct layers that sit on top of one another with strict directional dependencies. The bottom layer is a set of generic, header-only data structure templates — nothing in this layer knows about rides, users, or files. The system modules layer consumes those structures to implement authentication, trip lifecycle management, and persistence logic. Above that, domain models provide typed value objects (`Trip`, `Passenger`, `Driver`, `Vehicle`) that flow through the structures. At the top, the Windows Forms UI and console menus orchestrate user interactions and delegate all business logic downward. No layer reaches upward; the data structures never reference a form, and the forms never touch raw nodes.
@@ -87,7 +87,7 @@ The graph is backed by `include/GraphAdjacencyList.h`, which implements the adja
 
 ## Directory Structure
 
-```
+```text
 LYNX/
 ├── include/                  # Data structure headers (template implementations)
 │   ├── Node.h
@@ -131,9 +131,11 @@ LYNX/
 │   ├── passengers.txt
 │   ├── trips.txt
 │   ├── passwords.bin
+│   ├── passwords.txt
 │   ├── cities.csv
 │   └── connections.csv
 └── resources/                # Icons and images used by the Windows Forms UI
+    ├── LYNX_image.ico
     └── LYNX_image.png
 ```
 

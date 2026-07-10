@@ -10,7 +10,7 @@ description: "HashTable<T> stores passengers and drivers keyed by DNI string. Us
 
 The hash function applies a **polynomial rolling hash** with prime multiplier 31:
 
-```
+```text
 hash(key) = Σ ( key[i] * (i+1) * 31 ) mod capacity
 ```
 
@@ -20,7 +20,7 @@ Weighting each character by its position `(i+1)` ensures that DNIs that are anag
 
 Each bucket `tabla[i]` is the head of a singly-linked list of `HashNode` objects:
 
-```
+```cpp
 struct HashNode {
     string   clave;
     T        valor;

@@ -59,8 +59,11 @@ In `LinkedList<T>`, `popBack` must walk the entire chain to locate the second-to
 | `reverse` | `void reverse()` | Reverses the list in-place by swapping every node's `prev`/`next` | O(n) |
 | `clear` | `void clear()` | Deletes all nodes and resets `head`, `tail`, and `size` | O(n) |
 | `print` | `void print()` | Prints the chain as `[ a -> b -> nullptr ]` to stdout | O(n) |
-| `updateIf` | `void updateIf(function<bool(T)> criterio, function<void(T&)> transformar)` | Mutates every element satisfying `criterio` using `transformar` | O(n) |
-| `countIf` | `int countIf(function<bool(T)> criterio)` | Counts elements for which `criterio` returns `true` | O(n) |
+| `isEmpty` | `bool isEmpty() const` | Returns `true` when `size == 0` | O(1) |
+| `getSize` | `int getSize() const` | Returns the current element count | O(1) |
+| `linkedDoubleListToVector` | `vector&lt;T&gt; linkedDoubleListToVector(DoublyLinkedList&lt;T&gt;& list)` | Copies all elements of `list` into a `std::vector<T>` and returns it | O(n) |
+| `updateIf` | `void updateIf(function&lt;bool(T)&gt; criterio, function&lt;void(T&)&gt; transformar)` | Mutates every element satisfying `criterio` using `transformar` | O(n) |
+| `countIf` | `int countIf(function&lt;bool(T)&gt; criterio)` | Counts elements for which `criterio` returns `true` | O(n) |
 
 ## Complexity Summary
 
@@ -71,9 +74,26 @@ In `LinkedList<T>`, `popBack` must walk the entire chain to locate the second-to
 | `popFront` | O(1) |
 | `popBack` | O(1) |
 | `front` / `back` | O(1) |
+| `isEmpty` / `getSize` | O(1) |
 | `insert` | O(n) |
 | `remove` | O(n) |
 | `get` | O(n) |
+| `linkedDoubleListToVector` | O(n) |
+
+## Vector Export
+
+### `linkedDoubleListToVector` — Export to `std::vector`
+
+```cpp
+vector<T> linkedDoubleListToVector(DoublyLinkedList<T>& list)
+```
+
+Iterates over every element of `list` using `get(i)` and appends each one to a `std::vector<T>`, which is returned by value. Useful when downstream code (such as sorting utilities or display routines) requires random-access indexing that a linked structure cannot provide. The original list is not modified.
+
+```cpp
+// Export active trips to a vector for random-access processing
+vector<Trip> trips = activeTrips.linkedDoubleListToVector(activeTrips);
+```
 
 ## Lambda Methods
 

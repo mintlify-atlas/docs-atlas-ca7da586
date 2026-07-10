@@ -1,13 +1,13 @@
 ---
-title: "FileManager: File Persistence for All LYNX Data"
+title: "FileManager: Persistent Storage Layer for LYNX Data"
 sidebarTitle: "FileManager"
-description: "FileManager handles reading and writing passengers, drivers, admins, and trips to text and binary files, and parses the city and connection CSV files for the graph."
+description: "FileManager handles reading and writing passengers, drivers, trips, and admins to text and binary files, plus parsing CSV files for the city graph."
 ---
 
 FileManager (defined in `include/FileManager.h`) is the persistence layer for LYNX. All data files live in the `assets/` directory relative to the application's working directory and are loaded at startup by AuthManager. Every time a record is created, updated, or deleted, the relevant manager calls the appropriate FileManager write method to keep the files in sync with the in-memory state.
 
 <Note>
-  AuthManager's constructor calls FileManager methods directly to populate all in-memory structures from the `assets/` files. No explicit `reloadAll()` call is required — the constructor handles the full initialisation sequence automatically.
+  AuthManager's constructor calls FileManager methods directly to populate all in-memory structures from the `assets/` files. There is no `reloadAll()` method — the constructor handles the full initialisation sequence automatically. Individual reload methods (`reloadPassengers()`, `reloadDrivers()`, `reloadAdmins()`) exist on AuthManager for selective refreshes after external file changes.
 </Note>
 
 ## Data Files
@@ -20,7 +20,7 @@ FileManager (defined in `include/FileManager.h`) is the persistence layer for LY
 | `passwords.bin` | Binary | Fixed-width records: `tipo[16]`, `id[24]`, `dni[16]`, `password[32]` — mirrors passengers then drivers |
 | `passwords.txt` | Plain text | Human-readable export generated from `passwords.bin` — for reference only |
 | `trips.txt` | Pipe-delimited text | `tripId\|origin\|destination\|price\|tipe\|status\|driverName\|driverDni\|passengerDni\|date` |
-| `cities.csv` | CSV | `id,name,city_ascii,country` — city identifiers and display names |
+| `cities.csv` | CSV | `id,city,city_ascii,country` — city identifiers and display names |
 | `connections.csv` | CSV | `from_id,from_city_ascii,to_id,to_city_ascii,distance_km` — road connections |
 
 <Warning>
@@ -39,7 +39,7 @@ FileManager (defined in `include/FileManager.h`) is the persistence layer for LY
   ```
 </ResponseField>
 
-<ResponseField name="leerDriversTXT" type="vector<Driver>">
+<ResponseField name="leerDriversTXT" type="vector&lt;Driver&gt;">
   Reads `assets/drivers.txt` line by line. Splits each line on `|`, expects at least 13 fields, and reconstructs the embedded `Vehicle` from fields 9–13. Creates the file if it does not exist.
 
   ```cpp
@@ -57,7 +57,7 @@ FileManager (defined in `include/FileManager.h`) is the persistence layer for LY
   ```
 </ResponseField>
 
-<ResponseField name="leerPassengersTXT" type="vector<Passenger>">
+<ResponseField name="leerPassengersTXT" type="vector&lt;Passenger&gt;">
   Reads `assets/passengers.txt`, expects at least 7 fields per line, and reconstructs each `Passenger`. Creates the file if absent.
 
   ```cpp
@@ -75,7 +75,7 @@ FileManager (defined in `include/FileManager.h`) is the persistence layer for LY
   ```
 </ResponseField>
 
-<ResponseField name="leerTripsTXT" type="vector<Trip>">
+<ResponseField name="leerTripsTXT" type="vector&lt;Trip&gt;">
   Reads `assets/trips.txt`. Handles both 9-field and 10-field lines to maintain backward compatibility with older file versions.
 
   ```cpp
@@ -93,7 +93,7 @@ FileManager (defined in `include/FileManager.h`) is the persistence layer for LY
   ```
 </ResponseField>
 
-<ResponseField name="leerAdminsTXT" type="vector<AdminPreview>">
+<ResponseField name="leerAdminsTXT" type="vector&lt;AdminPreview&gt;">
   Reads `assets/admins.txt`, expecting at least 3 fields. Returns an empty vector and creates the file if absent.
 
   ```cpp
@@ -129,7 +129,7 @@ FileManager (defined in `include/FileManager.h`) is the persistence layer for LY
   ```
 </ResponseField>
 
-<ResponseField name="leerPasswordsBIN" type="vector<PasswordPreview>">
+<ResponseField name="leerPasswordsBIN" type="vector&lt;PasswordPreview&gt;">
   Reads `passwords.bin` sequentially and returns a vector of human-friendly `PasswordPreview` structs.
 
   ```cpp

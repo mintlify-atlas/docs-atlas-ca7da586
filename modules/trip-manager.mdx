@@ -90,7 +90,7 @@ TripManager(): tripCounter(0), cityGraph(7000, false), graphLoaded(false) {}
   ```
 </ResponseField>
 
-<ResponseField name="buscarViajesPorRangoPrecio" type="vector<Trip>">
+<ResponseField name="buscarViajesPorRangoPrecio" type="vector&lt;Trip&gt;">
   Inserts all trips into a temporary `AVLTree` keyed by price and returns only those whose price falls within `[precioMin, precioMax]`.
 
   ```cpp
@@ -179,6 +179,24 @@ float sumarGananciaRec(Trip* arr, int indice, int total) {
   ```
 </ResponseField>
 
+### ID Utilities
+
+<ResponseField name="rebuildTripCounter" type="void">
+  Scans all three collections (waiting queue, active list, history stack) and sets `tripCounter` to the highest numeric suffix found in any existing `TRP-XXXXX` ID. Call this after loading trips from file so that `generateId()` never produces a duplicate.
+
+  ```cpp
+  void rebuildTripCounter();
+  ```
+</ResponseField>
+
+<ResponseField name="sanitizeTripIds" type="void">
+  Exports every trip from all three collections, detects any empty or duplicate `TRP-XXXXX` ID, assigns fresh unique IDs to the offending trips, and then redistributes them back into the correct collection based on their `status` field. Calls `rebuildTripCounter()` and `syncUsedTripIds()` internally.
+
+  ```cpp
+  void sanitizeTripIds();
+  ```
+</ResponseField>
+
 ### Sorting
 
 | Method | Algorithm | Description |
@@ -219,7 +237,7 @@ if (route.connected) {
 
 ## Status Transitions
 
-```
+```text
 pendiente  ──assignDriver()──▶  en_curso  ──finishTrip()──▶  completado
     │                                                              │
     └──────────cancelTrip()──────────────────────────────▶  cancelado

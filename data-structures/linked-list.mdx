@@ -34,9 +34,11 @@ description: "LinkedList<T> is LYNX's singly-linked list. Supports O(1) front/ba
 | `clear` | `void clear()` | Deletes all nodes and resets `head`, `tail`, and `size` | O(n) |
 | `print` | `void print()` | Prints the chain as `[ a -> b -> nullptr ]` to stdout | O(n) |
 | `printInfo` | `void printInfo()` | Prints `size`, `head->data`, and `tail->data` as a one-liner | O(1) |
-| `forEach` | `void forEach(function<void(T)> accion)` | Calls `accion` on every element's data | O(n) |
-| `filter` | `LinkedList<T>* filter(function<bool(T)> criterio)` | Returns a new heap-allocated list of elements satisfying `criterio` | O(n) |
-| `findFirst` | `T findFirst(function<bool(T)> criterio)` | Returns the first element satisfying `criterio`, or `T{}` | O(n) |
+| `isEmpty` | `bool isEmpty() const` | Returns `true` when `size == 0` | O(1) |
+| `getSize` | `int getSize()` | Returns the current element count | O(1) |
+| `forEach` | `void forEach(function&lt;void(T)&gt; accion)` | Calls `accion` on every element's data | O(n) |
+| `filter` | `LinkedList&lt;T&gt;* filter(function&lt;bool(T)&gt; criterio)` | Returns a new heap-allocated list of elements satisfying `criterio` | O(n) |
+| `findFirst` | `T findFirst(function&lt;bool(T)&gt; criterio)` | Returns the first element satisfying `criterio`, or `T{}` | O(n) |
 | `toArray` | `T* toArray() const` | Exports all elements to a heap-allocated C-array; caller must `delete[]` | O(n) |
 | `fromArray` | `void fromArray(T* arr, int n)` | Clears the list and rebuilds it from `arr[0..n-1]` | O(n) |
 

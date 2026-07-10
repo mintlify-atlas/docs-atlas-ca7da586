@@ -1,7 +1,7 @@
 ---
 title: "Domain Models: Trip, Passenger, Driver, and Vehicle"
 sidebarTitle: "Models"
-description: "LYNX's four domain models—Trip, Passenger, Driver, and Vehicle—define the data that flows through every data structure, with auto-generated IDs and pricing logic."
+description: "LYNX's four domain models—Trip, Passenger, Driver, Vehicle—define the data flowing through every structure, with auto-generated IDs and pricing."
 ---
 
 The domain models are the objects stored in LYNX's data structures. They are plain C++ classes with no external framework dependencies — each one provides getters, setters, and a handful of business-logic methods. `Passenger` and `Driver` both extend the shared `User` base class, while `Vehicle` is a value type embedded directly inside `Driver`.
@@ -92,7 +92,7 @@ float calcPrice(int tipo, float km) {
 
 ### Status Transitions
 
-```
+```text
 pendiente  ──assignDriver──▶  en_curso  ──finishTrip──▶  completado
     │                              │
     └──cancelTrip──▶           cancelado ◀──cancelActiveTrip
@@ -154,6 +154,19 @@ passengerId = formatPassengerId(nextPassengerNumber()++);
 
 After loading from file, `AuthManager` calls `Passenger::syncNextPassengerId(n)` to align the static counter with the highest existing ID.
 
+### Getters and Setters
+
+`getDni()` and `getName()` are inherited from the `User` base class.
+
+| Getter | Setter | Type |
+|---|---|---|
+| `getPassengerId()` | `setPassengerId(string)` | `string` |
+| `getName()` | `setName(string)` | `string` *(inherited from `User`)* |
+| `getDni()` | `setDni(string)` | `string` *(inherited from `User`)* |
+| `getRating()` | `setRating(float)` | `float` |
+| `getTotalTrips()` | `setTotalTrips(int)` | `int` |
+| `getTotalSpent()` | `setTotalSpent(float)` | `float` |
+
 ### Key Methods
 
 | Method | Description |
@@ -213,9 +226,13 @@ static string formatDriverId(int numero) {
 
 ### Getters and Setters
 
+`getDni()` and `getName()` are inherited from the `User` base class.
+
 | Getter | Setter | Type |
 |---|---|---|
 | `getDriverId()` | `setDriverId(string)` | `string` |
+| `getName()` | `setName(string)` | `string` *(inherited from `User`)* |
+| `getDni()` | `setDni(string)` | `string` *(inherited from `User`)* |
 | `getRating()` | `setRating(float)` | `float` |
 | `getIsAvailable()` | `setAvailable(bool)` | `bool` |
 | `getTotalTrips()` | `setTotalTrips(int)` | `int` |
@@ -230,13 +247,15 @@ static string formatDriverId(int numero) {
 
 ### Fields and Methods
 
-| Field | Getter | Setter | Type |
-|---|---|---|---|
-| `plate` | `getPlate()` / `getPlates()` | `setPlate(string)` | `string` |
-| `brand` | `getBrand()` | `setBrand(string)` | `string` |
-| `model` | `getModel()` | `setModel(string)` | `string` |
-| `color` | `getColor()` | `setColor(string)` | `string` |
-| `year` | `getYear()` / `getYears()` | `setYear(int)` | `int` |
+| Field | Non-const Getter | Const Getter | Setter | Type |
+|---|---|---|---|---|
+| `plate` | `getPlate()` | `getPlates() const` | `setPlate(string)` | `string` |
+| `brand` | `getBrand()` | — | `setBrand(string)` | `string` |
+| `model` | `getModel()` | — | `setModel(string)` | `string` |
+| `color` | `getColor()` | — | `setColor(string)` | `string` |
+| `year` | `getYear()` | `getYears() const` | `setYear(int)` | `int` |
+
+`getPlate()` and `getYear()` are non-const member functions. `getPlates()` and `getYears()` are the `const`-qualified versions required when accessing a `Vehicle` through a `const` reference or `const`-qualified method (such as `FileManager::guardarDriversTXT`, which calls `d.getVehicle().getPlate()` and `d.getVehicle().getYear()` on a const `Driver` reference).
 
 `toString()` produces a compact pipe-delimited string used when persisting drivers:
 

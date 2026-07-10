@@ -1,5 +1,5 @@
 ---
-title: "AuthManager: Authentication and User Registry with Hash Lookups"
+title: "AuthManager: User Registry and Authentication in LYNX"
 sidebarTitle: "AuthManager"
 description: "AuthManager manages passenger, driver, and admin registration, login, and data in LYNX using LinkedLists backed by HashTables for O(1) DNI lookups."
 ---
@@ -49,7 +49,7 @@ AuthManager() {
   ```
 </ResponseField>
 
-<ResponseField name="getUserByDni / getPassengerByDni" type="Passenger">
+<ResponseField name="getUserByDni" type="Passenger">
   Hash lookup — returns the matching `Passenger`, or an empty default-constructed `Passenger` if not found.
 
   ```cpp
@@ -139,8 +139,8 @@ AuthManager() {
   ```
 </ResponseField>
 
-<ResponseField name="getConductoresDisponibles" type="LinkedList<Driver>*">
-  Uses `LinkedList::filter` with a lambda to return a new list containing only available drivers.
+<ResponseField name="getConductoresDisponibles" type="LinkedList&lt;Driver&gt;*">
+  Uses `LinkedList::filter` with a lambda to return a new heap-allocated list containing only available drivers. The caller owns the returned pointer and is responsible for deleting it.
 
   ```cpp
   LinkedList<Driver>* getConductoresDisponibles();
@@ -148,7 +148,16 @@ AuthManager() {
   ```
 </ResponseField>
 
-<ResponseField name="buscarConductoresPorRangoRating" type="vector<Driver>">
+<ResponseField name="contarConductoresDisponibles" type="int">
+  Recursive method that counts how many drivers in `driverList` have `getIsAvailable() == true`. Base case: `indice >= driverList->getSize()` returns `0`. Pass `0` as the starting index.
+
+  ```cpp
+  int contarConductoresDisponibles(int indice);
+  // Example: int total = auth.contarConductoresDisponibles(0);
+  ```
+</ResponseField>
+
+<ResponseField name="buscarConductoresPorRangoRating" type="vector&lt;Driver&gt;">
   Inserts all drivers into a temporary `AVLTree` keyed by rating and returns those whose rating falls within `[ratingMin, ratingMax]`.
 
   ```cpp
@@ -203,6 +212,14 @@ AuthManager() {
 
   ```cpp
   Passenger getPassengerMaxTotalSpentHeap();
+  ```
+</ResponseField>
+
+<ResponseField name="getPassengerMinTotalSpentHeap" type="Passenger">
+  Builds a min-heap over passengers ordered by `totalSpent` — O(n) to find the lowest-spending passenger.
+
+  ```cpp
+  Passenger getPassengerMinTotalSpentHeap();
   ```
 </ResponseField>
 
