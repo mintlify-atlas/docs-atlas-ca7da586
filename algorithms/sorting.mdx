@@ -1,0 +1,134 @@
+---
+title: "Sorting Algorithms: HeapSort, ShellSort, QuickSort, and More"
+sidebarTitle: "Sorting"
+description: "LYNX implements six sorting algorithms without STL: HeapSort and ShellSort as generics, plus QuickSort, MergeSort, TimSort, and CountingSort for domain types."
+---
+
+LYNX organizes its sorting logic into two distinct layers. The first layer, `AdvancedSorts<T>` (in `include/AdvancedSorts.h`), provides fully generic HeapSort and ShellSort that operate on any raw array `T* arr` and accept optional lambda comparators. The second layer, `AdvancedOrders<T>` (in `include/AdvancedOrders.h`), provides domain-specific algorithms — QuickSort, MergeSort, TimSort, and CountingSort — that work directly on `LinkedList<T>*` of passengers, drivers, or raw `Trip[]` arrays, handling the extract-sort-rebuild cycle internally. Together, these two classes cover every sorting need in the system without relying on the C++ Standard Library.
+
+---
+
+## Generic Algorithms (`AdvancedSorts<T>`)
+
+`AdvancedSorts<T>` lives in `include/AdvancedSorts.h`. Every method is `static` and operates on a raw C-style array `T* arr` of a given `size`. A private `swapTo` helper handles all element exchanges. Two algorithms are available: HeapSort and ShellSort, each in a default form and a custom-comparator form.
+
+### HeapSort
+
+```cpp
+static void heapSort(T* arr, int size);
+
+template<typename Compare>
+static void heapSort(T* arr, int size, Compare compare);
+```
+
+HeapSort runs in **O(n log n)** time in all cases and uses **O(1)** extra space. The default overload builds a max-heap using `operator>`, then repeatedly swaps the root (the current maximum) to the end of the unsorted region and calls `heapify` to restore the heap property.
+
+The comparator overload passes `compare` down into `heapify`, where it replaces the `>` check. The comparator should return `true` if the first argument should be treated as "larger" in the heap — meaning it will ultimately sort to a lower index (i.e., come first in the final array). To sort descending by rating, pass `a.getRating() > b.getRating()`.
+
+**Comparator signature:**
+
+```cpp
+bool compare(const T& a, const T& b); // returns true if a should appear before b
+```
+
+### ShellSort
+
+```cpp
+static void shellSort(T* arr, int size);
+
+template<typename Compare>
+static void shellSort(T* arr, int size, Compare compare);
+```
+
+ShellSort uses a halving gap sequence (`gap = size/2`, then `gap /= 2` each pass) and runs in **O(n log²n)** average time with **O(1)** space. The default overload uses `operator>` to compare; the comparator overload passes `compare` into the inner while-loop condition.
+
+### Usage Example
+
+```cpp
+Driver* arr = driverList->toArray();
+int n = driverList->getSize();
+
+// Sort drivers by rating descending
+AdvancedSorts<Driver>::heapSort(arr, n, [](const Driver& a, const Driver& b) {
+    return a.getRating() > b.getRating(); // higher rating first
+});
+
+driverList->fromArray(arr, n);
+delete[] arr;
+```
+
+---
+
+## Domain-Specific Algorithms (`AdvancedOrders<T>`)
+
+`AdvancedOrders<T>` lives in `include/AdvancedOrders.h`. Every method is `static`. The `LinkedList<T>*` overloads extract the list into a heap-allocated array, perform the sort in-place, then call `list->clear()` and rebuild with `pushBack`. The `Trip*` overload operates directly on the caller-provided raw array. All sort orders are **descending**.
+
+| Method | Algorithm | Input | Sort Key | Order |
+|---|---|---|---|---|
+| `shellSortDriverssByEarnings(LinkedList<Driver>*)` | Shell Sort | `LinkedList<Driver>` | `totalEarnings` | Descending |
+| `quickSortPassengersBySpent(LinkedList<Passenger>*)` | Quick Sort | `LinkedList<Passenger>` | `totalSpent` | Descending |
+| `mergeSortTripsByPrice(Trip* arr, int n)` | Merge Sort | Raw `Trip[]` | `price` | Descending |
+| `timSortPassengersByTrips(LinkedList<Passenger>*)` | Tim Sort (Insertion + Merge) | `LinkedList<Passenger>` | `totalTrips` | Descending |
+| `countingSortDriversByTrips(LinkedList<Driver>*)` | Counting Sort | `LinkedList<Driver>` | `totalTrips` | Descending |
+
+### QuickSort — passengers by total spent
+
+Pivot is the **last element** of the current partition. The `particionar` helper reorders elements in-place: anything with `getTotalSpent() >= pivote` moves to the left side, placing larger spenders first. Recursion continues on the two sub-partitions.
+
+- **Best / Average:** O(n log n) — balanced splits
+- **Worst:** O(n²) — already-sorted or reverse-sorted input
+- **Space:** O(log n) stack frames
+
+### MergeSort — trips by price
+
+Classic divide-and-conquer. `mergeSortHelper` recursively splits the `Trip` array to single-element subarrays, then `fusionarTrips` merges adjacent halves using a temporary left and right buffer, placing higher-priced trips first (`izq[i].getPrice() >= der[j].getPrice()`).
+
+- **Time:** O(n log n) in all cases
+- **Space:** O(n) — temporary merge buffers allocated per merge step
+- **Stable:** Yes — equal prices preserve original order
+
+### TimSort — passengers by trip count
+
+A hybrid algorithm combining Insertion Sort with Merge Sort. The array is first divided into blocks of **32 elements** (`RUN = 32`), each sorted individually by `insertionSortBloque` (descending by `getTotalTrips()`). The sorted runs are then merged in doubling passes using `fusionarPasajeros`, identical in structure to the MergeSort merge step.
+
+- **Best:** O(n) — nearly sorted input
+- **Average / Worst:** O(n log n)
+- **Space:** O(n) — merge buffers
+- **Stable:** Yes
+
+### CountingSort — drivers by trip count
+
+CountingSort is an integer-key, non-comparison sort. It finds `maxViajes` (the maximum `getTotalTrips()` across all drivers), allocates a zero-initialized count array of size `maxViajes + 1`, then fills a result array by iterating from `maxViajes` down to `0` — producing a descending sort. The count array is decremented on each placement to handle duplicate trip counts correctly.
+
+- **Time:** O(n + k) where k = `maxViajes`
+- **Space:** O(k) — count array + result buffer
+- **Stable:** Yes (preserves relative order of drivers with equal trip counts)
+
+### Usage Example
+
+```cpp
+// Sort all drivers by earnings (highest first)
+AdvancedOrders<Driver>::shellSortDriverssByEarnings(&driverList);
+
+// Sort passengers by number of trips
+AdvancedOrders<Passenger>::timSortPassengersByTrips(&passengerList);
+
+// Sort a raw array of trips by price
+Trip* trips = new Trip[n];
+// ... fill trips ...
+AdvancedOrders<Trip>::mergeSortTripsByPrice(trips, n);
+delete[] trips;
+```
+
+---
+
+## Complexity Summary
+
+| Algorithm | Best | Average | Worst | Space | Stable |
+|---|---|---|---|---|---|
+| HeapSort | O(n log n) | O(n log n) | O(n log n) | O(1) | No |
+| ShellSort | O(n log n) | O(n log²n) | O(n²) | O(1) | No |
+| QuickSort | O(n log n) | O(n log n) | O(n²) | O(log n) | No |
+| MergeSort | O(n log n) | O(n log n) | O(n log n) | O(n) | Yes |
+| TimSort | O(n) | O(n log n) | O(n log n) | O(n) | Yes |
+| CountingSort | O(n+k) | O(n+k) | O(n+k) | O(k) | Yes |

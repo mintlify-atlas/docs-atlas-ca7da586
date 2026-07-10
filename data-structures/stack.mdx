@@ -1,0 +1,80 @@
+---
+title: "Stack<T>: LIFO Trip History with Non-Destructive Search"
+sidebarTitle: "Stack"
+description: "Stack<T> is LYNX's LIFO structure used for trip history. Supports push, pop, peek, and findInStack which searches without destroying the stack."
+---
+
+`Stack<T>` implements a Last In, First Out (LIFO) structure, defined in `include/Stack.h`, and built on `Node<T>` nodes from `Node.h`. In a LIFO structure, the most recently added element is always the first to be retrieved — new elements push onto the top and removals always come from the top as well. In LYNX, `TripManager` maintains a `Stack<Trip>` named `history`. Every time a trip is completed or cancelled, it is pushed onto the history stack, making the most recent event instantly accessible at the top. The class exposes one lambda helper, `findInStack`, which searches the entire stack for a matching element without popping any nodes — preserving the full history while still supporting targeted lookups such as "find the last trip taken by passenger X."
+
+## Private Members
+
+| Member | Type | Role |
+|--------|------|------|
+| `top` | `Node<T>*` | Points to the most recently pushed node; `nullptr` when empty |
+| `size` | `int` | Current element count; checked by `isEmpty()` and `getSize()` |
+
+## Method Reference
+
+| Method | Signature | Description | Complexity |
+|--------|-----------|-------------|------------|
+| `push` | `void push(T dato)` | Creates a new node, sets its `next` to the current `top`, and advances `top` | O(1) |
+| `pop` | `void pop()` | Removes and deletes the top node; advances `top` to `top->next` | O(1) |
+| `peek` | `T peek()` | Returns `top->data` without removing it; returns `T{}` if empty | O(1) |
+| `isEmpty` | `bool isEmpty()` | Returns `true` when `size == 0` | O(1) |
+| `getSize` | `int getSize()` | Returns the current element count | O(1) |
+| `clear` | `void clear()` | Deletes every node from top to bottom and resets `top` and `size` | O(n) |
+| `print` | `void print()` | Prints the stack from top to bottom as a bracketed list to stdout | O(n) |
+| `findInStack` | `T findInStack(function&lt;bool(T)&gt; criterio)` | Searches from top to bottom for the first element satisfying `criterio`; returns `T{}` if not found | O(n) |
+
+## Complexity Summary
+
+| Operation | Time Complexity |
+|-----------|----------------|
+| `push` | O(1) |
+| `pop` | O(1) |
+| `peek` | O(1) |
+| `isEmpty` / `getSize` | O(1) |
+| `findInStack` | O(n) |
+| `clear` | O(n) |
+
+## Lambda Method
+
+### `findInStack` — Non-Destructive Search
+
+```cpp
+T findInStack(function<bool(T)> criterio)
+```
+
+Traverses the stack from `top` toward the bottom, evaluating `criterio` on each element's data. As soon as a match is found, that element is returned directly — no nodes are popped, reordered, or modified in any way. If the entire stack is exhausted without a match, the method returns a value-initialized `T{}`. This is the correct way to query trip history without losing records.
+
+```cpp
+// Find the most recent trip by passenger 12345678
+Trip last = history.findInStack([](Trip t) {
+    return t.getPassengerDni() == "12345678";
+});
+```
+
+Because `top` always holds the most recently pushed trip, `findInStack` naturally returns the **latest** matching entry — which aligns with "last trip of a passenger" queries in `TripManager`.
+
+## Usage Example
+
+```cpp
+Stack<Trip> history;
+history.push(completedTrip1);
+history.push(completedTrip2);
+
+// Get the last trip of passenger 12345678
+Trip last = history.findInStack([](Trip t) {
+    return t.getPassengerDni() == "12345678";
+});
+
+// View the most recent trip without removing it
+Trip recent = history.peek();
+
+// Remove the top entry (process and discard)
+history.pop();
+```
+
+<Warning>
+  `pop()` does **not** return the removed value — it only deletes the top node. Always call `peek()` first to read the top element before calling `pop()` if you need the value. Calling `pop()` on an empty stack is safe; it prints a message and returns without modifying state.
+</Warning>

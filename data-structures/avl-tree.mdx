@@ -1,0 +1,85 @@
+---
+title: "AVLTree<T>: Self-Balancing Tree for Range Queries"
+sidebarTitle: "AVL Tree"
+description: "AVLTree<T> is a self-balancing BST used in LYNX for O(log n) range searches on trip prices and driver ratings, built with a custom comparator lambda."
+---
+
+`AVLTree<T>` is a self-balancing binary search tree that enforces a **balance factor** — the difference in height between the left and right subtrees — of at most 1 at every node. When an insertion would violate this constraint, the tree corrects itself through one or two rotations before returning. The result is a guaranteed O(log n) height even in adversarial insertion orders, which makes it reliable for LYNX's range-query features where a degenerate BST would silently degrade to O(n).
+
+## Template Signature
+
+```cpp
+template <typename T, typename Compare = bool(*)(const T&, const T&)>
+class AVLTree
+```
+
+`Compare` is a strict-weak-ordering predicate: `menorQue(a, b)` returns `true` if element `a` should come before element `b` in the tree.
+
+## Rotation Cases
+
+After every `insertar`, the tree walks back up to the root, recalculates heights, and rebalances any node whose balance factor has left the `[-1, 1]` range:
+
+| Imbalance Case | Trigger | Fix |
+|---|---|---|
+| **Left-Left (LL)** | `balance > 1` and left child's factor ≥ 0 | Single right rotation (`rotarDerecha`) |
+| **Right-Right (RR)** | `balance < -1` and right child's factor ≤ 0 | Single left rotation (`rotarIzquierda`) |
+| **Left-Right (LR)** | `balance > 1` and left child's factor < 0 | Left rotation on left child, then right rotation |
+| **Right-Left (RL)** | `balance < -1` and right child's factor > 0 | Right rotation on right child, then left rotation |
+
+## Upsert Behaviour
+
+When two elements are **equal** under the comparator (neither `menorQue(a, b)` nor `menorQue(b, a)` is true), the existing node's `dato` is replaced with the new value rather than adding a duplicate node. The tree does not grow, and the height is not affected. This is intentional: the comparator is expected to include a unique tiebreaker field so that truly distinct objects never collide silently.
+
+## Method Reference
+
+| Method | Signature | Description |
+|---|---|---|
+| `insertar` | `void insertar(T valor)` | Inserts the element or updates it if the key already exists; rebalances as needed |
+| `buscarEnRango` | `vector<T> buscarEnRango(const T& minimo, const T& maximo) const` | Returns all elements whose key falls in the closed interval `[minimo, maximo]` |
+
+### How `buscarEnRango` Prunes the Tree
+
+The helper `enRangoHelper` avoids visiting subtrees that cannot contain in-range values:
+- It descends **left** only if the current node is greater than `minimo` (there may be valid elements to the left).
+- It descends **right** only if the current node is less than `maximo` (there may be valid elements to the right).
+- It collects the current node only when it falls inside both bounds.
+
+This gives O(log n + k) performance, where k is the number of results returned.
+
+## Code Example
+
+```cpp
+// Find all trips priced between 15.0 and 40.0
+auto tripPriceLess = [](const Trip& a, const Trip& b) {
+    if (a.getPrice() != b.getPrice())
+        return a.getPrice() < b.getPrice();
+    return a.getTripId() < b.getTripId(); // tiebreak
+};
+
+AVLTree<Trip, decltype(tripPriceLess)> tree(tripPriceLess);
+for (auto& t : allTrips) tree.insertar(t);
+
+Trip minT; minT.setPrice(15.0f); minT.setTripId("");
+Trip maxT; maxT.setPrice(40.0f); maxT.setTripId("~");
+vector<Trip> results = tree.buscarEnRango(minT, maxT);
+```
+
+<Tip>
+**The tiebreak pattern.** The AVL tree treats equal keys as the same record and overwrites on collision. Whenever two objects can share a key field (e.g., two trips with the same price, two drivers with the same rating), always add a second field to the comparator — such as `tripId` or DNI — that is guaranteed unique. Using `""` as the lower tiebreak and `"~"` as the upper bound works because `"~"` (ASCII 126) sorts after all alphanumeric characters, so `buscarEnRango` will include every trip at exactly the boundary price.
+</Tip>
+
+## LYNX Usage
+
+The AVL tree is used as a **temporary index** built on demand for each range query, then discarded:
+
+1. **`TripManager::buscarViajesPorRangoPrecio(float min, float max)`** — constructs an `AVLTree<Trip>` keyed by price, inserts all trips, then calls `buscarEnRango` with sentinel `Trip` objects whose price fields are set to `min` and `max`.
+
+2. **`AuthManager::buscarConductoresPorRangoRating(float min, float max)`** — follows the same pattern, building an `AVLTree<Driver>` keyed by rating to return all drivers whose average rating falls within the requested range.
+
+## Complexity
+
+| Operation | Time Complexity |
+|---|---|
+| `insertar` | O(log n) |
+| `buscarEnRango` | O(log n + k), where k = number of results |
+| Construction / Destruction | O(n) |

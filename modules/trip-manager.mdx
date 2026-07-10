@@ -1,0 +1,235 @@
+---
+title: "TripManager: Orchestrating the Full Trip Lifecycle"
+sidebarTitle: "TripManager"
+description: "TripManager coordinates the three-stage trip pipeline in LYNX using Queue, DoublyLinkedList, and Stack, plus Graph-based route distance calculation."
+---
+
+TripManager is the central coordinator in LYNX. It owns three trip collections — a waiting queue, an active list, and a history stack — and a city graph used to validate routes and compute distances via Dijkstra's algorithm. Every trip created in the system passes through TripManager from the moment it is requested to the moment it is completed or cancelled.
+
+## Internal State
+
+TripManager's private fields map directly to the three-stage pipeline plus the graph infrastructure.
+
+| Field | Type | Purpose |
+|---|---|---|
+| `waitingQueue` | `Queue<Trip>` | Pending trips awaiting driver assignment (FIFO) |
+| `activeTrips` | `DoublyLinkedList<Trip>` | Trips currently in progress |
+| `history` | `Stack<Trip>` | Completed and cancelled trips (LIFO) |
+| `cityGraph` | `Graph<string>` | City road network — capacity 7,000 vertices, undirected |
+| `tripCounter` | `int` | Monotonically incrementing ID counter |
+| `cityIdByDisplayName` | `unordered_map<string, string>` | Maps display name → city ID for O(1) graph lookup |
+
+The constructor initialises the graph with `cityGraph(7000, false)` and sets `tripCounter` to zero:
+
+```cpp
+TripManager(): tripCounter(0), cityGraph(7000, false), graphLoaded(false) {}
+```
+
+## Method Reference
+
+### Trip Creation and Lifecycle
+
+<ResponseField name="createTrip" type="Trip">
+  Creates a trip, sets its price via `calcPrice`, and enqueues it as **pendiente**. Generates a unique ID in the format `TRP-XXXXX`. If no driver name is provided, the field is set to `"Por asignar"`.
+
+  ```cpp
+  Trip createTrip(string origin, string destination, int tipo, float km,
+                  string driverName, string driverDni,
+                  string passengerDni, string date);
+  ```
+</ResponseField>
+
+<ResponseField name="assignDriver" type="bool">
+  Dequeues the first waiting trip, assigns the given driver, moves the trip to `activeTrips`, and marks the driver as occupied via `auth.driverAcceptRide()`. Returns `false` if the queue is empty or the driver is unavailable.
+
+  ```cpp
+  bool assignDriver(string driverDni, AuthManager& auth);
+  ```
+</ResponseField>
+
+<ResponseField name="finishTrip" type="bool">
+  Finds a trip in `activeTrips` by ID, marks it as **completado**, calls `auth.addTripToUser()` to update the passenger's spend, calls `auth.driverFinishRide()` to free the driver, and pushes the trip to `history`.
+
+  ```cpp
+  bool finishTrip(string tripId, AuthManager& auth);
+  ```
+</ResponseField>
+
+<ResponseField name="cancelTrip" type="void">
+  Cancels the first waiting trip (FIFO), marks it as **cancelado**, and pushes it to `history`.
+
+  ```cpp
+  void cancelTrip();
+  ```
+</ResponseField>
+
+<ResponseField name="cancelActiveTrip" type="bool">
+  Cancels a specific active trip by ID, frees the assigned driver if present, and pushes the trip to `history`.
+
+  ```cpp
+  bool cancelActiveTrip(string tripId, AuthManager& auth);
+  ```
+</ResponseField>
+
+### Viewing
+
+| Method | Description |
+|---|---|
+| `viewWaiting()` | Prints a summary count and all trips in the waiting queue |
+| `viewWaitingDetailed()` | Prints the queue with position numbers using `Queue::forEach` |
+| `viewActive()` | Prints each active trip from the doubly-linked list |
+| `viewHistory()` | Dumps the full history stack non-destructively |
+
+### Search and Query
+
+<ResponseField name="searchTripByIdBinary" type="Trip">
+  Exports all trips, sorts them by ID with HeapSort, then performs a recursive binary search. Returns an empty `Trip` if not found.
+
+  ```cpp
+  Trip searchTripByIdBinary(string code);
+  ```
+</ResponseField>
+
+<ResponseField name="buscarViajesPorRangoPrecio" type="vector<Trip>">
+  Inserts all trips into a temporary `AVLTree` keyed by price and returns only those whose price falls within `[precioMin, precioMax]`.
+
+  ```cpp
+  vector<Trip> buscarViajesPorRangoPrecio(float precioMin, float precioMax);
+  ```
+</ResponseField>
+
+<ResponseField name="getLastTripByPassenger" type="Trip">
+  Non-destructively searches the history stack for the most recent trip matching the given passenger DNI using `Stack::findInStack`.
+
+  ```cpp
+  Trip getLastTripByPassenger(string dni);
+  ```
+</ResponseField>
+
+<ResponseField name="matchBestDriver" type="string">
+  Iterates the driver list and returns the DNI of the available driver with the highest rating, or an empty string if none are free.
+
+  ```cpp
+  string matchBestDriver(AuthManager& auth);
+  ```
+</ResponseField>
+
+### Statistics
+
+| Method | Returns | Description |
+|---|---|---|
+| `getTotalPlatformEarnings()` | `float` | Recursive sum of 20% commission on every completed trip |
+| `getTotalIngresosCompletados()` | `float` | Sum of all completed trip prices (gross) |
+| `contarViajesCompletados()` | `int` | Count of completed trips in history |
+| `contarViajesCancelados()` | `int` | Count of cancelled trips in history |
+| `contarViajesEnCurso()` | `int` | Uses `countIf` on `activeTrips` |
+| `calcTotalEnCola()` | `float` | Uses `Queue::sumBy` to total prices in the waiting queue |
+
+Platform earnings use a private recursive helper that walks a flattened history array:
+
+```cpp
+// 20% commission on each completed trip, computed recursively
+float sumarGananciaRec(Trip* arr, int indice, int total) {
+    if (indice == total) return 0.0f;
+    float resto = sumarGananciaRec(arr, indice + 1, total);
+    if (arr[indice].estaCompletado())
+        return arr[indice].getPrice() * 0.20f + resto;
+    return resto;
+}
+```
+
+### City Graph
+
+<ResponseField name="loadCityGraph" type="void">
+  Reads `cities.csv` and `connections.csv` via FileManager, adds each city as a vertex (keyed by its ID string), and adds each road connection as a weighted undirected edge. Distances are stored internally in units of 100 metres and converted to km on retrieval.
+
+  ```cpp
+  void loadCityGraph(FileManager& file);
+  ```
+</ResponseField>
+
+<ResponseField name="validateRoute" type="RouteResult">
+  Returns a `RouteResult` struct with `originExists`, `destinationExists`, `connected`, and `kilometers`. Both city lookups are O(1) through `cityIdByDisplayName`; connectivity is verified with Dijkstra.
+
+  ```cpp
+  struct RouteResult {
+      bool   originExists;
+      bool   destinationExists;
+      bool   connected;
+      double kilometers;
+  };
+
+  RouteResult validateRoute(string origen, string destino);
+  ```
+</ResponseField>
+
+<ResponseField name="calculateDistance" type="double">
+  Runs Dijkstra between two city display names and returns the distance in km. Returns `-1` if the graph is not loaded or either city is unknown.
+
+  ```cpp
+  double calculateDistance(string origen, string destino);
+  ```
+</ResponseField>
+
+<ResponseField name="cityExists" type="bool">
+  O(1) check — queries the `cityIdByDisplayName` hash map.
+
+  ```cpp
+  bool cityExists(string city);
+  ```
+</ResponseField>
+
+### Sorting
+
+| Method | Algorithm | Description |
+|---|---|---|
+| `sortActiveTripsByPrice()` | Selection Sort | Sorts `activeTrips` in-place, highest price first |
+| `getAllTripsSortedByPrice()` | HeapSort | Exports all trips sorted by price descending |
+| `getAllTripsSortedById()` | HeapSort | Exports all trips sorted by ID ascending |
+
+## Full Trip Lifecycle Example
+
+```cpp
+TripManager tm;
+AuthManager auth;
+tm.loadCityGraph(fileManager);
+
+// Validate route and calculate distance
+TripManager::RouteResult route = tm.validateRoute("Lima", "Cusco");
+if (route.connected) {
+    // Create trip (tipo 1 = economy, 2 = comfort, 3 = premium)
+    Trip t = tm.createTrip(
+        "Lima", "Cusco", 1,
+        (float)route.kilometers,
+        "", "",
+        "12345678",
+        "2024-06-15"
+    );
+
+    // Assign best available driver
+    string bestDriver = tm.matchBestDriver(auth);
+    if (!bestDriver.empty()) {
+        tm.assignDriver(bestDriver, auth);
+    }
+
+    // Complete the trip
+    tm.finishTrip(t.getTripId(), auth);
+}
+```
+
+## Status Transitions
+
+```
+pendiente  ──assignDriver()──▶  en_curso  ──finishTrip()──▶  completado
+    │                                                              │
+    └──────────cancelTrip()──────────────────────────────▶  cancelado
+                                    │
+                          cancelActiveTrip()
+                                    │
+                                    ▼
+                                cancelado
+```
+
+<Note>
+  `loadCityGraph()` is guarded by a `graphLoaded` flag and is a no-op on subsequent calls. Call it once at application startup before any route validation or trip creation.
+</Note>

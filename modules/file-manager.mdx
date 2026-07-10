@@ -1,0 +1,238 @@
+---
+title: "FileManager: File Persistence for All LYNX Data"
+sidebarTitle: "FileManager"
+description: "FileManager handles reading and writing passengers, drivers, admins, and trips to text and binary files, and parses the city and connection CSV files for the graph."
+---
+
+FileManager (defined in `include/FileManager.h`) is the persistence layer for LYNX. All data files live in the `assets/` directory relative to the application's working directory and are loaded at startup by AuthManager. Every time a record is created, updated, or deleted, the relevant manager calls the appropriate FileManager write method to keep the files in sync with the in-memory state.
+
+<Note>
+  AuthManager's constructor calls FileManager methods directly to populate all in-memory structures from the `assets/` files. No explicit `reloadAll()` call is required — the constructor handles the full initialisation sequence automatically.
+</Note>
+
+## Data Files
+
+| Filename | Format | Field order / Contents |
+|---|---|---|
+| `passengers.txt` | Pipe-delimited text | `passengerId\|name\|dni\|password\|rating\|totalTrips\|totalSpent` |
+| `drivers.txt` | Pipe-delimited text | `driverId\|name\|dni\|password\|rating\|isAvailable\|totalTrips\|totalEarnings\|plate\|brand\|model\|color\|year` |
+| `admins.txt` | Pipe-delimited text | `adminId\|username\|password` |
+| `passwords.bin` | Binary | Fixed-width records: `tipo[16]`, `id[24]`, `dni[16]`, `password[32]` — mirrors passengers then drivers |
+| `passwords.txt` | Plain text | Human-readable export generated from `passwords.bin` — for reference only |
+| `trips.txt` | Pipe-delimited text | `tripId\|origin\|destination\|price\|tipe\|status\|driverName\|driverDni\|passengerDni\|date` |
+| `cities.csv` | CSV | `id,name,city_ascii,country` — city identifiers and display names |
+| `connections.csv` | CSV | `from_id,from_city_ascii,to_id,to_city_ascii,distance_km` — road connections |
+
+<Warning>
+  `passwords.bin` is a binary file — do **not** edit it manually with a text editor. Its records use fixed-size char arrays and any corruption will cause malformed reads. If the file becomes corrupted, delete it and restart the application — it will be regenerated from the current passenger and driver lists on the next `saveAll()` call.
+</Warning>
+
+## Key Methods
+
+### Driver File
+
+<ResponseField name="guardarDriversTXT" type="bool">
+  Writes the entire `vector<Driver>` to `assets/drivers.txt`, one driver per line in the 13-field pipe-delimited format. Overwrites the file on each call.
+
+  ```cpp
+  bool guardarDriversTXT(const vector<Driver>& listaDeDrivers);
+  ```
+</ResponseField>
+
+<ResponseField name="leerDriversTXT" type="vector<Driver>">
+  Reads `assets/drivers.txt` line by line. Splits each line on `|`, expects at least 13 fields, and reconstructs the embedded `Vehicle` from fields 9–13. Creates the file if it does not exist.
+
+  ```cpp
+  vector<Driver> leerDriversTXT();
+  ```
+</ResponseField>
+
+### Passenger File
+
+<ResponseField name="guardarPassengersTXT" type="bool">
+  Writes the entire `vector<Passenger>` to `assets/passengers.txt` in the 7-field format.
+
+  ```cpp
+  bool guardarPassengersTXT(const vector<Passenger>& listaDePassengers);
+  ```
+</ResponseField>
+
+<ResponseField name="leerPassengersTXT" type="vector<Passenger>">
+  Reads `assets/passengers.txt`, expects at least 7 fields per line, and reconstructs each `Passenger`. Creates the file if absent.
+
+  ```cpp
+  vector<Passenger> leerPassengersTXT();
+  ```
+</ResponseField>
+
+### Trip File
+
+<ResponseField name="guardarTripsTXT" type="bool">
+  Writes all trips to `assets/trips.txt` in the 10-field pipe-delimited format.
+
+  ```cpp
+  bool guardarTripsTXT(const vector<Trip>& listaDeTrips);
+  ```
+</ResponseField>
+
+<ResponseField name="leerTripsTXT" type="vector<Trip>">
+  Reads `assets/trips.txt`. Handles both 9-field and 10-field lines to maintain backward compatibility with older file versions.
+
+  ```cpp
+  vector<Trip> leerTripsTXT();
+  ```
+</ResponseField>
+
+### Admin File
+
+<ResponseField name="guardarAdminsTXT" type="bool">
+  Writes the admin list to `assets/admins.txt` in the 3-field format.
+
+  ```cpp
+  bool guardarAdminsTXT(const vector<AdminPreview>& listaDeAdmins);
+  ```
+</ResponseField>
+
+<ResponseField name="leerAdminsTXT" type="vector<AdminPreview>">
+  Reads `assets/admins.txt`, expecting at least 3 fields. Returns an empty vector and creates the file if absent.
+
+  ```cpp
+  vector<AdminPreview> leerAdminsTXT();
+  ```
+</ResponseField>
+
+<ResponseField name="generarAdminsTXT" type="bool">
+  Seeds `assets/admins.txt` with four fixed admin accounts and 111 randomly generated accounts if the file does not yet exist. Called once in `AuthManager`'s constructor.
+
+  ```cpp
+  bool generarAdminsTXT();
+  ```
+</ResponseField>
+
+<ResponseField name="generarIdAdmin" type="string">
+  Produces a zero-padded admin ID string in the format `ADM-XXX`.
+
+  ```cpp
+  string generarIdAdmin(int contador);
+  // generarIdAdmin(5) → "ADM-005"
+  ```
+</ResponseField>
+
+### Password Binary File
+
+<ResponseField name="guardarPasswordsBIN" type="bool">
+  Writes fixed-size `PasswordRecordBin` structs (88 bytes each) to `assets/passwords.bin` — first all passengers, then all drivers.
+
+  ```cpp
+  bool guardarPasswordsBIN(const vector<Passenger>& passengers,
+                           const vector<Driver>& drivers);
+  ```
+</ResponseField>
+
+<ResponseField name="leerPasswordsBIN" type="vector<PasswordPreview>">
+  Reads `passwords.bin` sequentially and returns a vector of human-friendly `PasswordPreview` structs.
+
+  ```cpp
+  vector<PasswordPreview> leerPasswordsBIN();
+  ```
+</ResponseField>
+
+<ResponseField name="guardarPasswordsTXT" type="bool">
+  Calls `leerPasswordsBIN()` and writes a plain-text version to `assets/passwords.txt`. Inserts a blank separator line between the passenger and driver sections.
+
+  ```cpp
+  bool guardarPasswordsTXT();
+  ```
+</ResponseField>
+
+## CSV Parsing for the City Graph
+
+FileManager exposes two structs and two methods specifically for `TripManager::loadCityGraph()`.
+
+### Structs
+
+```cpp
+struct City {
+    string id;       // numeric city identifier (e.g. "3936456")
+    string name;     // display name / city_ascii column
+    string country;
+};
+
+struct Connection {
+    string idfrom;   // origin city ID
+    string idto;     // destination city ID
+    string from;     // origin city display name
+    string to;       // destination city display name
+    double weight;   // road distance in km
+};
+```
+
+### leerCitiesCSV
+
+Reads `assets/cities.csv`, skipping the header row (`id` column). Expects at least 4 comma-separated fields per line and maps them as:
+
+| CSV column index | Struct field |
+|---|---|
+| 0 | `City.id` |
+| 2 | `City.name` (`city_ascii`) |
+| 3 | `City.country` |
+
+```cpp
+vector<City> leerCitiesCSV();
+```
+
+### leerConnectionsCSV
+
+Reads `assets/connections.csv`, skipping the header row (`from_id` column). Expects at least 5 fields:
+
+| CSV column index | Struct field |
+|---|---|
+| 0 | `Connection.idfrom` |
+| 1 | `Connection.from` |
+| 2 | `Connection.idto` |
+| 3 | `Connection.to` |
+| 4 | `Connection.weight` (parsed with `stod`) |
+
+```cpp
+vector<Connection> leerConnectionsCSV();
+```
+
+### How TripManager Uses the CSV Data
+
+```cpp
+void TripManager::loadCityGraph(FileManager& file) {
+    vector<FileManager::City> ciudades = file.leerCitiesCSV();
+    vector<FileManager::Connection> conexiones = file.leerConnectionsCSV();
+
+    for (auto& c : ciudades) {
+        int idx = cityGraph.addVertex(c.id);
+        cityIdByDisplayName[c.name] = c.id;   // O(1) lookup by display name
+    }
+
+    for (auto& con : conexiones) {
+        // Distances stored as integer units of 100 m for integer Dijkstra
+        int weightInHundredMeters = (int)(con.weight * 100.0 + 0.5);
+        cityGraph.addEdge(fromIdx, toIdx, weightInHundredMeters);
+    }
+}
+```
+
+## Nested Public Structs
+
+FileManager exposes three plain structs used by AuthManager as data-transfer types:
+
+| Struct | Fields | Used For |
+|---|---|---|
+| `PasswordPreview` | `tipo`, `id`, `dni`, `password` (all strings) | Reading back from the binary file |
+| `AdminPreview` | `id`, `username`, `password` | Admin record in memory and in `admins.txt` |
+| `City` | `id`, `name`, `country` | City data from `cities.csv` |
+| `Connection` | `idfrom`, `idto`, `from`, `to`, `weight` | Road data from `connections.csv` |
+
+## Field Separator
+
+FileManager uses `|` (pipe) as the field separator in all text files. The constructor stores it as `char separador = '|'`. An alternate constructor accepts a custom separator:
+
+```cpp
+FileManager();                  // uses '|'
+FileManager(char _separador);   // uses the provided character
+```

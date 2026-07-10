@@ -1,0 +1,262 @@
+---
+title: "AuthManager: Authentication and User Registry with Hash Lookups"
+sidebarTitle: "AuthManager"
+description: "AuthManager manages passenger, driver, and admin registration, login, and data in LYNX using LinkedLists backed by HashTables for O(1) DNI lookups."
+---
+
+AuthManager is the user registry for LYNX. It maintains in-memory collections for all three user types — passengers, drivers, and admins — and persists them through FileManager on every state change. Two parallel hash tables (`hashPasajeros` and `hashConductores`) shadow the linked lists so that any lookup by DNI runs in O(1) average time instead of O(n).
+
+## Internal State
+
+| Field | Type | Purpose |
+|---|---|---|
+| `passengerList` | `LinkedList<Passenger>*` | Primary ordered list of all passengers |
+| `driverList` | `LinkedList<Driver>*` | Primary ordered list of all drivers |
+| `adminList` | `LinkedList<FileManager::AdminPreview>*` | Admin accounts loaded from `admins.txt` |
+| `hashPasajeros` | `HashTable<Passenger>` | Parallel hash keyed by DNI — O(1) passenger lookup |
+| `hashConductores` | `HashTable<Driver>` | Parallel hash keyed by DNI — O(1) driver lookup |
+| `vehicleTree` | `BinarySearchTree*` | BST for vehicle search by plate |
+
+The constructor loads all three user types from file, sanitises any duplicate or malformed IDs, compacts the ID sequences, and then rebuilds all hash tables:
+
+```cpp
+AuthManager() {
+    // Load from files
+    // Sanitize + sort + compact IDs
+    // Rebuild hash tables
+    reconstruirHashPasajeros();
+    reconstruirHashConductores();
+    reconstruirArbolVehiculos();
+}
+```
+
+## Passenger Methods
+
+<ResponseField name="registerUser / registerPassenger" type="bool">
+  Validates that the DNI is exactly 8 numeric digits, checks that the DNI does not already exist in either role, creates a `Passenger` with an auto-generated `PAS-XXXX` ID, appends it to `passengerList`, and inserts it into `hashPasajeros`.
+
+  ```cpp
+  bool registerUser(string name, string dni, string password);
+  bool registerPassenger(string name, string dni, string password);
+  ```
+</ResponseField>
+
+<ResponseField name="loginUserValid" type="bool">
+  Uses `hashPasajeros.buscar()` for O(1) lookup, then delegates to `Passenger::login()` to compare credentials.
+
+  ```cpp
+  bool loginUserValid(string dni, string password);
+  ```
+</ResponseField>
+
+<ResponseField name="getUserByDni / getPassengerByDni" type="Passenger">
+  Hash lookup — returns the matching `Passenger`, or an empty default-constructed `Passenger` if not found.
+
+  ```cpp
+  Passenger getUserByDni(string dni);
+  ```
+</ResponseField>
+
+<ResponseField name="addTripToUser" type="void">
+  Increments `totalTrips` and adds `precio` to `totalSpent` on the passenger, then updates both the linked list and the hash table.
+
+  ```cpp
+  void addTripToUser(string dni, float precio);
+  ```
+</ResponseField>
+
+<ResponseField name="updatePassengerData" type="void">
+  Updates name and password in the linked list, the hash table, and persists to file.
+
+  ```cpp
+  void updatePassengerData(string dni, string newName, string newPass);
+  ```
+</ResponseField>
+
+<ResponseField name="updateUserRating" type="void">
+  Recalculates the passenger rating using a weighted average and updates both in-memory structures plus the file.
+
+  ```cpp
+  void updateUserRating(string dni, float nuevaCalif);
+  ```
+</ResponseField>
+
+## Driver Methods
+
+<ResponseField name="registerDriver" type="bool">
+  Validates the DNI, creates a `Driver` with an auto-generated `DRV-XXXX` ID and the provided `Vehicle`, appends to `driverList`, inserts into `hashConductores`, and rebuilds `vehicleTree`.
+
+  ```cpp
+  bool registerDriver(string name, string dni, string password, Vehicle vehicle);
+  ```
+</ResponseField>
+
+<ResponseField name="loginDriverValid" type="bool">
+  Uses `hashConductores.buscar()` for O(1) lookup, then calls `Driver::login()`.
+
+  ```cpp
+  bool loginDriverValid(string dni, string password);
+  ```
+</ResponseField>
+
+<ResponseField name="getDriverByDni" type="Driver">
+  Hash lookup — returns the matching `Driver`, or an empty `Driver` if not found.
+
+  ```cpp
+  Driver getDriverByDni(string dni);
+  ```
+</ResponseField>
+
+<ResponseField name="driverAcceptRide" type="void">
+  Calls `Driver::acceptRide(precio)` — sets `isAvailable = false`, increments `totalTrips`, adds to `totalEarnings`. Updates list, hash, and file.
+
+  ```cpp
+  void driverAcceptRide(string dni, float precio);
+  ```
+</ResponseField>
+
+<ResponseField name="driverFinishRide" type="void">
+  Calls `Driver::finishRide()` — sets `isAvailable = true`. Updates list, hash, and file.
+
+  ```cpp
+  void driverFinishRide(string dni);
+  ```
+</ResponseField>
+
+<ResponseField name="updateDriverRating" type="void">
+  Calls `Driver::updateRating()` (weighted average) and persists the change.
+
+  ```cpp
+  void updateDriverRating(string dni, float nuevaCalif);
+  ```
+</ResponseField>
+
+<ResponseField name="findAvailableDriver" type="string">
+  Linear scan of `driverList` — returns the DNI of the first driver where `getIsAvailable()` is `true`, or `""` if none are free.
+
+  ```cpp
+  string findAvailableDriver();
+  ```
+</ResponseField>
+
+<ResponseField name="getConductoresDisponibles" type="LinkedList<Driver>*">
+  Uses `LinkedList::filter` with a lambda to return a new list containing only available drivers.
+
+  ```cpp
+  LinkedList<Driver>* getConductoresDisponibles();
+  // Internally: driverList->filter([](Driver d){ return d.getIsAvailable(); });
+  ```
+</ResponseField>
+
+<ResponseField name="buscarConductoresPorRangoRating" type="vector<Driver>">
+  Inserts all drivers into a temporary `AVLTree` keyed by rating and returns those whose rating falls within `[ratingMin, ratingMax]`.
+
+  ```cpp
+  vector<Driver> buscarConductoresPorRangoRating(float ratingMin, float ratingMax);
+  ```
+</ResponseField>
+
+## Admin Methods
+
+<ResponseField name="loginAdminValid" type="bool">
+  Linear search of `adminList` by username, then compares the stored password directly.
+
+  ```cpp
+  bool loginAdminValid(string username, string password);
+  ```
+</ResponseField>
+
+<Note>
+  Admin accounts are seeded automatically at startup by `FileManager::generarAdminsTXT()`. The system ships with four fixed admin accounts (`Yeremy`, `Salvador`, `Melissa`, `Edson`) plus randomly generated test accounts.
+</Note>
+
+## Sorting Methods
+
+| Method | Algorithm | Sorts By |
+|---|---|---|
+| `sortDriversByRating()` | Shell Sort | Driver rating, highest first |
+| `sortDriversByRatingHeapSort()` | HeapSort | Driver rating, highest first |
+| `sortUsersBySpent()` | Insertion Sort | Passenger `totalSpent`, highest first |
+| `sortPassengersById()` | Insertion Sort | Passenger ID number, ascending |
+| `sortDriversById()` | Insertion Sort | Driver ID number, ascending |
+
+## Heap-Based Extremes
+
+<ResponseField name="getDriverMaxRatingHeap" type="Driver">
+  Builds a max-heap over the driver array and peeks at the root — O(n) to find the highest-rated driver.
+
+  ```cpp
+  Driver getDriverMaxRatingHeap();
+  ```
+</ResponseField>
+
+<ResponseField name="getDriverMinRatingHeap" type="Driver">
+  Builds a min-heap — O(n) to find the lowest-rated driver.
+
+  ```cpp
+  Driver getDriverMinRatingHeap();
+  ```
+</ResponseField>
+
+<ResponseField name="getPassengerMaxTotalSpentHeap" type="Passenger">
+  Builds a max-heap over passengers ordered by `totalSpent` — O(n) to find the highest-spending passenger.
+
+  ```cpp
+  Passenger getPassengerMaxTotalSpentHeap();
+  ```
+</ResponseField>
+
+## Persistence Methods
+
+| Method | Description |
+|---|---|
+| `saveAll()` | Sorts both lists and writes passengers, drivers, and the binary password file |
+| `savePassengers()` | Sorts then writes only the passenger file |
+| `saveDrivers()` | Sorts then writes only the driver file |
+| `saveAdmins()` | Sorts then writes only the admin file |
+| `reloadPassengers()` | Re-reads `passengers.txt`, sanitises, and rebuilds hash |
+| `reloadDrivers()` | Re-reads `drivers.txt`, sanitises, rebuilds hash and vehicle tree |
+| `reloadAdmins()` | Re-reads `admins.txt` and sanitises IDs |
+| `readPasswordsBinary()` | Returns `vector<FileManager::PasswordPreview>` from `passwords.bin` |
+
+## Usage Example
+
+```cpp
+AuthManager auth;
+// Constructor automatically loads and sanitises all data from files
+
+// Register a passenger
+bool ok = auth.registerUser("Carlos López", "12345678", "mypass");
+
+// Login — O(1) via hash table
+bool valid = auth.loginUserValid("12345678", "mypass");
+
+// Get driver with highest rating using a max-heap
+Driver best = auth.getDriverMaxRatingHeap();
+cout << best.getName() << " - " << best.getRating() << "\n";
+
+// Find all drivers rated between 4.0 and 5.0
+vector<Driver> topDrivers = auth.buscarConductoresPorRangoRating(4.0f, 5.0f);
+
+// Sort passengers by total spend (Insertion Sort)
+auth.sortUsersBySpent();
+```
+
+## DNI Validation
+
+The `validateDni` method uses an internal lambda to enforce the 8-digit numeric rule:
+
+```cpp
+bool validateDni(string dni) {
+    auto esDniValido = [](string d) -> bool {
+        if (d.size() != 8) return false;
+        for (char c : d) if (c < '0' || c > '9') return false;
+        return true;
+    };
+    return esDniValido(dni);
+}
+```
+
+<Warning>
+  A DNI cannot be shared across roles. `dniExistsAnyRole()` checks both the passenger and driver hash tables before any registration is accepted. Attempting to register the same DNI as both passenger and driver will be rejected.
+</Warning>

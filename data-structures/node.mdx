@@ -1,0 +1,59 @@
+---
+title: "Node<T>: The Foundation of Every LYNX Data Structure"
+sidebarTitle: "Node"
+description: "Node<T> is the single-link building block used by LinkedList, Queue, and Stack in LYNX. Holds a typed data field and a next pointer."
+---
+
+`Node<T>` is the atomic unit of memory that powers the majority of LYNX's data structures. Defined in `include/Node.h`, it is a minimal templated class that wraps a single value of type `T` and maintains a `next` pointer to the following node in the chain. Every `LinkedList<T>`, `Queue<T>`, and `Stack<T>` in the system is built exclusively from `Node<T>` instances linked together at runtime. Because it carries no logic beyond construction, `Node<T>` is deliberately lightweight — its only responsibility is ownership of data and awareness of its immediate successor.
+
+## Class Definition
+
+The complete source of `Node<T>` as defined in `include/Node.h`:
+
+```cpp
+template <typename T>
+class Node {
+public:
+    T data;
+    Node<T>* next;
+
+    Node(T _data) {
+        data = _data;
+        next = nullptr;
+    }
+};
+```
+
+## Fields
+
+<ResponseField name="data" type="T">
+  Holds the stored value of type `T`. This is the payload of the node — whatever the containing structure (list, queue, or stack) was asked to store. Because `T` is a template parameter, `data` can be any type: a primitive like `int`, a domain object like `Driver`, or a record like `Trip`.
+</ResponseField>
+
+<ResponseField name="next" type="Node<T>*">
+  A raw pointer to the next node in the sequence. When the node is the last element in its structure (the tail of a list, the back of a queue, or the bottom of a stack), `next` is `nullptr`. This sentinel value is set automatically by the constructor and is the standard termination condition for all traversal loops across LYNX.
+</ResponseField>
+
+## About `DNode<T>`
+
+`DoublyLinkedList<T>` does **not** use `Node<T>`. It defines its own `DNode<T>` type inside `include/DoublyLinkedList.h`, which adds a `prev` pointer alongside `next`. This allows the doubly-linked list to traverse in both directions and to perform `popBack` in O(1) time — something a singly-linked structure cannot do without walking the full chain. All other data structures in LYNX (`LinkedList`, `Queue`, `Stack`) exclusively use `Node<T>`.
+
+## Complexity
+
+| Operation | Time Complexity |
+|-----------|----------------|
+| Construct `Node(value)` | O(1) |
+| Read `data` | O(1) |
+| Read / write `next` | O(1) |
+
+## Usage Example
+
+```cpp
+Node<int> n(42);
+cout << n.data;               // 42
+cout << (n.next == nullptr);  // true (1)
+```
+
+<Note>
+  You will rarely construct `Node<T>` objects directly in application code. `LinkedList<T>`, `Queue<T>`, and `Stack<T>` all manage node allocation and deallocation internally. Direct use is mainly relevant when implementing or extending a custom traversal.
+</Note>

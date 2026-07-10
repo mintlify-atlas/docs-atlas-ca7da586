@@ -1,0 +1,117 @@
+---
+title: "Queue<T>: FIFO Trip Waiting List with Lambda Helpers"
+sidebarTitle: "Queue"
+description: "Queue<T> is LYNX's FIFO structure used for the trip waiting list. Supports conditional enqueue, forEach traversal, and numeric aggregation via sumBy."
+---
+
+`Queue<T>` implements a First In, First Out (FIFO) structure, defined in `include/Queue.h`, and built on top of `Node<T>` nodes from `Node.h`. In a FIFO structure, the element that has waited the longest is always the next one to be served — new elements join the back and leave from the front. In LYNX, `TripManager` maintains a `Queue<Trip>` named `waitingQueue`. When a passenger requests a ride and no driver is immediately available, their trip is enqueued; when a driver becomes free, the trip at the front of the queue is dequeued and assigned. This guarantees fair, arrival-order dispatch. The class adds three lambda helpers on top of the core FIFO operations: `enqueueIf` for conditional insertion, `forEach` for non-destructive traversal, and `sumBy` for numeric aggregation across the entire queue.
+
+## Private Members
+
+| Member | Type | Role |
+|--------|------|------|
+| `front` | `Node<T>*` | Points to the oldest element; the next to be dequeued |
+| `back` | `Node<T>*` | Points to the newest element; where new nodes are appended |
+| `size` | `int` | Current element count; checked by `isEmpty()` and `getSize()` |
+
+## Method Reference
+
+| Method | Signature | Description | Complexity |
+|--------|-----------|-------------|------------|
+| `enqueue` | `void enqueue(T value)` | Appends a new node after `back` | O(1) |
+| `dequeue` | `void dequeue()` | Removes and deletes the `front` node | O(1) |
+| `getFront` | `T getFront() const` | Returns `front->data` without removing it; returns `T{}` if empty | O(1) |
+| `getBack` | `T getBack() const` | Returns `back->data` without removing it; returns `T{}` if empty | O(1) |
+| `isEmpty` | `bool isEmpty() const` | Returns `true` when `size == 0` | O(1) |
+| `getSize` | `int getSize() const` | Returns the current element count | O(1) |
+| `clear` | `void clear()` | Deletes every node and resets `front`, `back`, and `size` | O(n) |
+| `print` | `void print()` | Prints all elements from front to back as a bracketed list using `toString()` | O(n) |
+| `enqueueIf` | `bool enqueueIf(T value, function&lt;bool(T)&gt; condicion)` | Enqueues only if `condicion(value)` is `true`; returns whether it was added | O(1) |
+| `forEach` | `void forEach(function&lt;void(T)&gt; accion) const` | Calls `accion` on every element from front to back without dequeuing | O(n) |
+| `sumBy` | `float sumBy(function&lt;float(T)&gt; extractor) const` | Sums `extractor(element)` across every node; returns the total as `float` | O(n) |
+
+## Complexity Summary
+
+| Operation | Time Complexity |
+|-----------|----------------|
+| `enqueue` | O(1) |
+| `dequeue` | O(1) |
+| `getFront` / `getBack` | O(1) |
+| `isEmpty` / `getSize` | O(1) |
+| `enqueueIf` | O(1) |
+| `forEach` | O(n) |
+| `sumBy` | O(n) |
+| `clear` | O(n) |
+
+## Lambda Methods
+
+### `enqueueIf` — Conditional Insertion
+
+```cpp
+bool enqueueIf(T value, function<bool(T)> condicion)
+```
+
+Evaluates `condicion(value)` before inserting. If the condition returns `true`, the element is enqueued and the method returns `true`. If the condition returns `false`, nothing is inserted and the method returns `false`. This removes the need for an explicit `if` guard at every call site and makes intent clear.
+
+```cpp
+// Only enqueue the trip if the passenger's DNI is registered
+bool added = waitingQueue.enqueueIf(newTrip, [&](Trip t) {
+    return auth.userExists(t.getPassengerDni());
+});
+```
+
+### `forEach` — Non-Destructive Traversal
+
+```cpp
+void forEach(function<void(T)> accion) const
+```
+
+Iterates from `front` to `back`, calling `accion` on each element's data. The queue is not modified — no elements are dequeued. Used in `TripManager::viewWaitingDetailed` to display every pending trip's details to the console without disturbing the queue's order.
+
+```cpp
+// Print details of every waiting trip
+waitingQueue.forEach([](Trip t) {
+    cout << t.toString() << "\n";
+});
+```
+
+### `sumBy` — Numeric Aggregation
+
+```cpp
+float sumBy(function<float(T)> extractor) const
+```
+
+Accumulates a numeric value extracted from each element and returns the running total as a `float`. Used in `TripManager::calcTotalEnCola` to compute the combined fare of all trips currently waiting to be assigned.
+
+```cpp
+// Total fare of all trips waiting in the queue
+float total = waitingQueue.sumBy([](Trip t) {
+    return t.getPrice();
+});
+```
+
+## Usage Example
+
+```cpp
+Queue<Trip> waitingQueue;
+waitingQueue.enqueue(trip1);
+waitingQueue.enqueue(trip2);
+
+// Sum total fare of all waiting trips
+float total = waitingQueue.sumBy([](Trip t) {
+    return t.getPrice();
+});
+
+// Only enqueue if passenger DNI is valid
+bool added = waitingQueue.enqueueIf(newTrip, [&](Trip t) {
+    return auth.userExists(t.getPassengerDni());
+});
+
+// Dequeue to assign to the next available driver
+Trip next = waitingQueue.getFront();
+waitingQueue.dequeue();
+```
+
+<Note>
+  `print()` calls `toString()` on each stored element, so the type `T` must implement a `toString()` method that returns a `std::string` (or a type implicitly convertible to one via `operator<<`). If `T` does not provide `toString()`, the code will not compile.
+</Note>

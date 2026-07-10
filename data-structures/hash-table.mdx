@@ -1,0 +1,92 @@
+---
+title: "HashTable<T>: O(1) Lookup by DNI with Auto-Resize"
+sidebarTitle: "HashTable"
+description: "HashTable<T> stores passengers and drivers keyed by DNI string. Uses chaining for collision resolution and auto-resizes when load factor exceeds 75%."
+---
+
+`HashTable<T>` is LYNX's primary identity-lookup structure, designed around the Peruvian DNI string as a key. Because authentication checks happen on every login and booking action, the table is optimised for average O(1) insertion and retrieval. Collision resolution uses separate chaining — each bucket holds a mini linked-list of `HashNode` entries — so the table degrades gracefully under load rather than clustering. An automatic resize keeps the load factor below 0.75 at all times, preserving the O(1) guarantee in practice.
+
+## Hash Function
+
+The hash function applies a **polynomial rolling hash** with prime multiplier 31:
+
+```
+hash(key) = Σ ( key[i] * (i+1) * 31 ) mod capacity
+```
+
+Weighting each character by its position `(i+1)` ensures that DNIs that are anagrams of each other — sharing the same digits in different orders — hash to different buckets. The result is modded by the current `capacity` to stay within the array bounds.
+
+## Collision Resolution: Separate Chaining
+
+Each bucket `tabla[i]` is the head of a singly-linked list of `HashNode` objects:
+
+```
+struct HashNode {
+    string   clave;
+    T        valor;
+    HashNode* siguiente;
+};
+```
+
+New entries are prepended to the chain (O(1)). Lookup scans the chain linearly, which is O(1) on average when the load factor is controlled.
+
+## Auto-Resize
+
+When `(cantidad + 1) / capacidad > 0.75`, `insertar` calls `redimensionar` before adding the new entry. The new capacity is the **next prime ≥ 2 × old + 1**, which:
+
+- Keeps the bucket count odd (better distribution with the rolling hash)
+- Avoids the clustering that comes from power-of-two capacities
+
+All existing `HashNode` objects are re-chained into the new array using the same hash formula recalculated against the new `capacidad`. The old bucket array is freed.
+
+The initial capacity is **13** (a prime).
+
+## Method Reference
+
+| Method | Signature | Description |
+|---|---|---|
+| `insertar` | `void insertar(const string& clave, const T& valor)` | Inserts or updates (upsert). If the key already exists, its value is replaced in place |
+| `buscar` | `bool buscar(const string& clave, T& valorEncontrado) const` | Looks up by key. Returns `true` and copies the value into `valorEncontrado` on hit |
+| `contiene` | `bool contiene(const string& clave) const` | Returns `true` if the key exists without copying the value |
+| `redimensionar` | `void redimensionar()` | Grows the table to the next prime ≥ 2×capacity+1 and re-hashes all entries |
+| `limpiar` | `void limpiar()` | Deletes all `HashNode` objects in every chain; the bucket array itself is retained |
+
+<Note>
+`insertar` has **upsert semantics**: if a `HashNode` with the same key is already in the chain, its `valor` field is overwritten and the function returns immediately without allocating a new node or incrementing `cantidad`. This means you can safely call `insertar` to refresh a passenger's or driver's data after an edit, without duplicating the record.
+</Note>
+
+## Code Example
+
+```cpp
+HashTable<Passenger> table;
+Passenger p("Maria", "12345678", "secret");
+table.insertar("12345678", p);
+
+Passenger found;
+if (table.buscar("12345678", found)) {
+    cout << found.getName(); // Maria
+}
+
+bool exists = table.contiene("12345678"); // true
+```
+
+## LYNX Usage
+
+`AuthManager` owns two hash tables that are rebuilt from file each time the application loads its data:
+
+```cpp
+HashTable<Passenger> hashPasajeros;
+HashTable<Driver>    hashConductores;
+```
+
+Every login and every booking lookup goes through `buscar` on one of these tables, giving O(1) average authentication regardless of how many users are registered.
+
+## Complexity
+
+| Operation | Average Case | Worst Case |
+|---|---|---|
+| `insertar` | O(1) | O(n) — all keys in same bucket |
+| `buscar` | O(1) | O(n) |
+| `contiene` | O(1) | O(n) |
+| `redimensionar` | O(n) | O(n) |
+| `limpiar` | O(n) | O(n) |

@@ -1,0 +1,103 @@
+---
+title: "BinarySearchTree: Vehicle Index Ordered by License Plate"
+sidebarTitle: "BST"
+description: "BinarySearchTree manages Vehicle objects in LYNX, sorted by license plate string. Supports O(log n) lookup, deletion, and in-order export of all vehicles."
+---
+
+`BinarySearchTree` (declared in `include/BinarySearchTree.h`) is a non-generic binary search tree specialised exclusively for `Vehicle` objects. The tree is keyed on each vehicle's **license plate string**, ordered alphabetically by the inline helper `compararPlaca`. Because plate strings are unique identifiers in LYNX, there are no true duplicates — inserting a vehicle whose plate already exists silently updates the node in place, which keeps the tree consistent after operations like repaints or model corrections. The tree is intentionally non-copyable; only one `BinarySearchTree` should own a given set of vehicle nodes at any time.
+
+## Internal Node: `NodoV`
+
+```cpp
+class NodoV {
+public:
+    Vehicle dato;
+    NodoV*  izq;
+    NodoV*  der;
+    NodoV(Vehicle v) : dato(v), izq(nullptr), der(nullptr) {}
+};
+```
+
+## Ordering Function
+
+```cpp
+inline bool compararPlaca(const Vehicle& a, const Vehicle& b) {
+    return a.getPlates() < b.getPlates();
+}
+```
+
+Left subtree plates are lexicographically less than the parent; right subtree plates are greater. In-order traversal therefore yields vehicles sorted A → Z by plate.
+
+## Non-Copyable Design
+
+The copy constructor and copy-assignment operator are explicitly deleted:
+
+```cpp
+BinarySearchTree(const BinarySearchTree&) = delete;
+BinarySearchTree& operator=(const BinarySearchTree&) = delete;
+```
+
+This prevents accidental shallow copies of the raw `NodoV*` pointer tree. If you need to transfer ownership, rebuild the tree by calling `insertar` on the new instance.
+
+## Method Reference
+
+| Method | Signature | Description |
+|---|---|---|
+| `insertar` | `void insertar(Vehicle v)` | Inserts `v` in plate order; replaces the existing node if the plate matches |
+| `buscarPorPlaca` | `Vehicle buscarPorPlaca(string placa, bool& encontrado)` | Returns the matching `Vehicle`; sets `encontrado = false` and returns a default `Vehicle` if not found |
+| `eliminarPorPlaca` | `bool eliminarPorPlaca(string placa, Vehicle& eliminado)` | Removes the node with the given plate, copies the deleted vehicle into `eliminado`, and returns `true` on success |
+| `obtenerVehiculoMasNuevo` | `Vehicle obtenerVehiculoMasNuevo()` | Traverses the entire tree and returns the `Vehicle` with the highest `year` |
+| `reportePorPlaca` | `void reportePorPlaca(int profundidadMax = 999)` | In-order traversal — prints vehicles alphabetically by plate, up to `profundidadMax` levels deep |
+| `reportePreOrden` | `void reportePreOrden(int profundidadMax = 999)` | Pre-order traversal (root → left → right) |
+| `reportePostOrden` | `void reportePostOrden(int profundidadMax = 999)` | Post-order traversal (left → right → root) |
+| `aplicar<Accion>` | `template<typename Accion> void aplicar(Accion a)` | Applies a callable `a(Vehicle&)` to every node in in-order sequence |
+| `aplicarConNivel<Accion>` | `template<typename Accion> void aplicarConNivel(Accion a)` | Applies `a(Vehicle&, int nivel)` to every node in pre-order, passing the depth (root = 1) |
+| `getTotalVehiculos` | `int getTotalVehiculos()` | Returns the total node count by recursively counting the entire tree |
+| `limpiar` | `void limpiar()` | Deletes all nodes and sets the root to `nullptr` |
+| `exportarOrdenado` | `vector<Vehicle> exportarOrdenado()` | Returns a `vector<Vehicle>` sorted alphabetically by plate (uses `aplicar` internally) |
+
+## Code Example
+
+```cpp
+BinarySearchTree bst;
+
+Vehicle v1("ABC-123", "Toyota", "Corolla", "Blanco", 2020);
+Vehicle v2("XYZ-999", "Honda", "Civic", "Negro", 2019);
+bst.insertar(v1);
+bst.insertar(v2);
+
+bool found;
+Vehicle result = bst.buscarPorPlaca("ABC-123", found);
+if (found) cout << result.getModel(); // Corolla
+
+// In-order traversal (alphabetical by plate)
+bst.reportePorPlaca();
+
+// Export sorted vector
+vector<Vehicle> sorted = bst.exportarOrdenado();
+
+// Lambda over every vehicle
+bst.aplicar([](Vehicle& v) {
+    cout << v.getPlates() << "\n";
+});
+
+// Lambda with depth info
+bst.aplicarConNivel([](Vehicle& v, int level) {
+    cout << "Level " << level << ": " << v.getPlates() << "\n";
+});
+```
+
+## LYNX Usage
+
+`AuthManager` holds a pointer `vehicleTree` of type `BinarySearchTree*`. The tree is rebuilt whenever the driver list reloads from file: each `Driver` record carries one or more associated `Vehicle` objects, which are inserted into the tree keyed on their plate strings. `buscarPorPlaca` is then used throughout the system to validate that a vehicle is registered before a trip is assigned to it.
+
+## Complexity
+
+| Operation | Average Case | Worst Case |
+|---|---|---|
+| `insertar` | O(log n) | O(n) — degenerate (sorted input) |
+| `buscarPorPlaca` | O(log n) | O(n) |
+| `eliminarPorPlaca` | O(log n) | O(n) |
+| `obtenerVehiculoMasNuevo` | O(n) | O(n) |
+| `exportarOrdenado` | O(n) | O(n) |
+| `getTotalVehiculos` | O(n) | O(n) |

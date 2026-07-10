@@ -1,0 +1,156 @@
+---
+title: "Graph<T>: Weighted City Network with Dijkstra Routing"
+sidebarTitle: "Graph"
+description: "Graph<T> is LYNX's adjacency-list weighted graph. It models the city road network and provides BFS, DFS, and Dijkstra's shortest-path algorithm for route pricing."
+---
+
+`Graph<T>` is a weighted adjacency-list graph that forms the backbone of LYNX's geographic routing layer. Each vertex stores an arbitrary data value of type `T`; edges carry integer weights and are stored as a singly-linked list hanging off each vertex. LYNX instantiates the graph as `Graph<string>` where vertex data is a city ID string, and the graph is configured as **undirected** so that road distances apply symmetrically between any two cities. The full city graph is loaded once at startup and then queried repeatedly to price trip routes via Dijkstra's algorithm.
+
+## Adjacency-List Structure
+
+Internally, the graph is an array of `Vertex` structs. Each vertex owns a linked list of `Edge` structs:
+
+```cpp
+struct Edge {
+    int   to;      // index of the destination vertex
+    int   weight;  // edge weight (distance in 100-metre units)
+    Edge* next;    // next edge in this vertex's list
+};
+
+struct Vertex {
+    T     data;    // vertex payload (e.g. city ID string)
+    Edge* edges;   // head of the adjacency list
+    bool  active;  // true once the vertex has been added
+};
+```
+
+New edges are **prepended** to the adjacency list, so `addEdge` is O(1). For an undirected graph, two `Edge` objects are created — one in each direction.
+
+## Template
+
+```cpp
+template <typename T>
+class Graph
+```
+
+`T` is the vertex data type. LYNX uses `Graph<string>` with short city ID strings (e.g., `"LIM"`, `"CUS"`).
+
+## Constructor
+
+```cpp
+Graph(int capacity, bool directed = false)
+```
+
+- `capacity` — fixed maximum number of vertices. LYNX allocates **7000** for the city graph.
+- `directed` — pass `true` for a directed graph; LYNX uses `false` (undirected).
+
+Capacity is fixed at construction; the vertex array is not resized at runtime.
+
+## Method Reference
+
+| Method | Signature | Description |
+|---|---|---|
+| `addVertex` | `int addVertex(T value)` | Appends a new vertex and returns its index; returns `-1` if the graph is full |
+| `addEdge` | `void addEdge(int from, int to, int weight = 1)` | Adds a weighted edge; adds the reverse edge automatically if undirected |
+| `removeEdge` | `void removeEdge(int from, int to)` | Removes the edge (and its reverse for undirected graphs) |
+| `hasEdge` | `bool hasEdge(int from, int to) const` | Returns `true` if a direct edge exists from `from` to `to` |
+| `degree` | `int degree(int v) const` | Returns the number of edges leaving vertex `v` |
+| `bfs` | `void bfs(int start) const` | Breadth-first traversal from `start`; prints vertices in BFS order |
+| `dfs` | `void dfs(int start) const` | Iterative depth-first traversal using an internal `Stack<int>` |
+| `dfsRecursive` | `void dfsRecursive(int start) const` | Recursive DFS traversal |
+| `dijkstra` | `void dijkstra(int start) const` | Prints shortest distances and full paths from `start` to all reachable vertices |
+| `dijkstraDistance` | `int dijkstraDistance(int start, int target) const` | Returns the shortest-path distance as an integer; returns `-1` if unreachable |
+| `getData` | `T getData(int v) const` | Returns the data stored at vertex `v` |
+| `isEmpty` | `bool isEmpty() const` | Returns `true` when no vertices have been added |
+| `getSize` | `int getSize() const` | Current vertex count |
+| `isDirected` | `bool isDirected() const` | Returns `true` if the graph was constructed as directed |
+| `print` | `void print() const` | Prints the full adjacency list with weights |
+| `clear` | `void clear()` | Removes all edges and marks all vertices inactive; resets size to 0 |
+| `findVertex` | `int findVertex(T value) const` | Linear scan; returns the index of the first vertex whose data equals `value`, or `-1` |
+
+## Dijkstra's Algorithm in Detail
+
+Both `dijkstra` and `dijkstraDistance` use an internal `Heap<DijkstraNode>` configured as a min-heap priority queue:
+
+```cpp
+struct DijkstraNode {
+    int dist;    // tentative distance from source
+    int vertex;  // vertex index
+};
+
+auto minCmp = [](const DijkstraNode& a, const DijkstraNode& b) {
+    return a.dist < b.dist;
+};
+Heap<DijkstraNode, decltype(minCmp)> heap(size_ * 2 + 1, minCmp);
+```
+
+The algorithm initialises all distances to `INT_MAX`, sets `dist[start] = 0`, and relaxes edges by pushing updated `DijkstraNode` entries onto the heap. Stale entries (where `curr.dist > dist[v]`) are skipped with a `continue` check, avoiding the need to support a decrease-key operation.
+
+- **`dijkstra(start)`** — prints distances and reconstructed paths to every reachable vertex. Useful for debugging the city graph.
+- **`dijkstraDistance(start, target)`** — returns only the integer distance to a single target. Returns `-1` if the target is unreachable. This is the method called by `TripManager` to price a route.
+
+## City Graph Loading
+
+`TripManager::loadCityGraph(FileManager&)` builds the production graph:
+
+1. Reads `cities.csv` — each row provides a city ID and display name. Every city is added with `addVertex`, and the returned index is stored in an `unordered_map<string, int>` keyed by city ID.
+2. Reads `connections.csv` — each row provides two city IDs and a distance in kilometres. The loader multiplies by 100 to convert to **integer units of 100 metres** before calling `addEdge`.
+3. A second `unordered_map<string, string>` maps display names back to city IDs so that user-facing city name input can be translated to graph vertex indices.
+
+<Note>
+**Weight unit.** Edge weights in the graph are stored in **units of 100 metres** (i.e., kilometres × 100, cast to `int`). The value returned by `dijkstraDistance` is therefore in these same units. Divide by `100.0` to recover kilometres:
+
+```cpp
+int raw = g.dijkstraDistance(lima, cusco);
+if (raw != -1) {
+    double km = raw / 100.0;
+    cout << "Distance: " << km << " km";
+}
+```
+</Note>
+
+## Code Example
+
+```cpp
+Graph<string> g(100, false); // undirected, capacity 100
+
+int lima     = g.addVertex("LIM");
+int cusco    = g.addVertex("CUS");
+int arequipa = g.addVertex("AQP");
+
+g.addEdge(lima, cusco,     110000); // 1100 km in 100m units
+g.addEdge(lima, arequipa,   79700);
+
+// BFS traversal
+g.bfs(lima);
+
+// Shortest path distance
+int dist = g.dijkstraDistance(lima, cusco);
+if (dist != -1) {
+    double km = dist / 100.0;
+    cout << "Distance: " << km << " km";
+}
+
+// Print full adjacency list
+g.print();
+
+// Find vertex index by city ID
+int idx = g.findVertex("CUS"); // returns 1
+```
+
+## Complexity
+
+| Operation | Time Complexity |
+|---|---|
+| `addVertex` | O(1) |
+| `addEdge` | O(1) |
+| `removeEdge` | O(E) per vertex adjacency list |
+| `hasEdge` | O(E) |
+| `degree` | O(E) |
+| `bfs` | O(V + E) |
+| `dfs` | O(V + E) |
+| `dfsRecursive` | O(V + E) |
+| `dijkstra` | O((V + E) log V) |
+| `dijkstraDistance` | O((V + E) log V) |
+| `findVertex` | O(V) |
+| `clear` | O(V + E) |

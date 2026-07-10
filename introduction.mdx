@@ -1,0 +1,74 @@
+---
+title: "LYNX: Ride Management Built on Hand-Rolled Data Structures"
+sidebarTitle: "Introduction"
+description: "LYNX is a C++ ride-management platform that implements every data structure from scratch—no STL—to manage passengers, drivers, vehicles, and trips."
+---
+
+LYNX is a full-featured ride-management system written in C++/CLI that coordinates passengers, drivers, vehicles, and trips through a complete application lifecycle — from ride requests and driver assignment all the way to trip history and earnings reporting. What sets LYNX apart is its deliberate rejection of the C++ Standard Template Library: every data structure used at runtime — linked lists, queues, stacks, hash tables, AVL trees, binary search trees, heaps, and a graph — is implemented from scratch using raw pointers, manual memory allocation, and template classes. The result is a working, deployable application that doubles as a living textbook on algorithmic data structures. LYNX ships with both a Windows Forms graphical interface and a full console interface, launched from the same `main.cpp` entry point.
+
+## User Roles
+
+LYNX recognizes three distinct user roles, each with its own menu, permissions, and data scope.
+
+**Passenger** — Registers with a DNI, name, and password. Can request trips (Economy, Standard, or Premium), view active and pending rides, browse their personal trip history, and rate the driver after a completed ride.
+
+**Driver** — Registers with the same credentials plus a vehicle (plate, brand, model, color, year). Can log a manual trip, view their trip history, finish an active ride to become available again, and inspect their earnings summary.
+
+**Administrator** — Pre-seeded in `assets/admins.txt` with credentials such as `Yeremy / admin777`. Can list all passengers and drivers, search by DNI, sort and rank drivers by rating, view system-wide statistics, inspect the active trip queue, and audit the binary password file.
+
+## Key Data Structures
+
+<CardGroup cols={2}>
+  <Card title="Queue&lt;Trip&gt; — Waiting List" icon="clock">
+    Incoming trip requests are enqueued into a FIFO `Queue<Trip>` called `waitingQueue`. The first passenger to request a ride is the first to be assigned a driver, preserving fair ordering without any `std::queue` dependency.
+  </Card>
+  <Card title="DoublyLinkedList&lt;Trip&gt; — Active Rides" icon="car">
+    Trips currently in progress live in a `DoublyLinkedList<Trip>` named `activeTrips`. The doubly-linked structure allows efficient traversal in both directions and O(1) removal from any position when a ride finishes.
+  </Card>
+  <Card title="Stack&lt;Trip&gt; — Trip History" icon="layer-group">
+    Completed trips are pushed onto a `Stack<Trip>`. The most recent ride sits at the top, giving O(1) access to the last completed trip — used when a passenger rates their most recent driver.
+  </Card>
+  <Card title="HashTable — O(1) Lookups" icon="bolt">
+    `AuthManager` maintains a `HashTable<Passenger>` and a `HashTable<Driver>`, both keyed by DNI. These run in parallel with the linked lists and provide average-case O(1) authentication and profile lookup.
+  </Card>
+  <Card title="AVLTree&lt;Trip&gt; — Sorted Trips" icon="arrow-up-z-a">
+    An AVL tree is used by the administrator panel to present trips sorted by price. The self-balancing property guarantees O(log n) insertions and lookups regardless of insertion order.
+  </Card>
+  <Card title="Graph&lt;string&gt; — City Routing" icon="map">
+    `TripManager` holds a `Graph<string>` loaded from `cities.csv` and `connections.csv`. Dijkstra's algorithm runs over this graph to compute route distances between origin and destination cities.
+  </Card>
+  <Card title="Heap — Driver Rankings" icon="trophy">
+    A max-`Heap` is used in the administrator panel to extract the top-rated drivers efficiently, supporting the "Top Drivers" view without sorting the entire driver list on every request.
+  </Card>
+  <Card title="LinkedList — Passenger &amp; Driver Rosters" icon="list">
+    `AuthManager` stores the full passenger roster in a `LinkedList<Passenger>` and the driver roster in a `LinkedList<Driver>`. These are the primary ordered collections from which the hash tables and trees are rebuilt on load.
+  </Card>
+</CardGroup>
+
+## Why No STL?
+
+LYNX was designed as an applied data-structures project with a strict constraint: no `#include <vector>`, `<queue>`, `<stack>`, `<map>`, or any other STL container may be used inside the core data structure layer. This constraint exists for three educational reasons.
+
+**Manual memory management.** Every node is allocated with `new` and freed with `delete`. Destructors are written explicitly to avoid memory leaks. Students working with LYNX gain direct experience with the ownership semantics that smart pointers and RAII abstract away.
+
+**Pointer arithmetic and indirection.** Traversing a linked list, peeking at the top of a stack, or hashing a DNI string all require working directly with raw pointers. This makes the cost of pointer chasing tangible in a way that iterator abstractions do not.
+
+**Algorithmic complexity made visible.** When the code that inserts into an AVL tree is right in front of you — rotations, balance factors, recursive rebalancing — the O(log n) guarantee stops being a textbook claim and becomes something you can trace line by line.
+
+<Note>
+  All data structures in `include/` are implemented as C++ template classes, making them type-safe and reusable across `Trip`, `Passenger`, `Driver`, and `string` without any code duplication. For example, `Queue<Trip>`, `HashTable<Passenger>`, and `AVLTree<Trip>` all share the same underlying generic implementations.
+</Note>
+
+## Data Flow
+
+Understanding how LYNX moves data through its structures is the fastest way to see how they interlock.
+
+1. **Registration.** A passenger calls `AuthManager::registerPassenger()`. The new `Passenger` object is appended to `LinkedList<Passenger>` and simultaneously inserted into `HashTable<Passenger>` keyed by DNI. Credentials are written to `assets/passengers.txt` and hashed to `assets/passwords.bin`.
+
+2. **Trip request.** The passenger submits an origin, destination, trip type, and distance. `TripManager` wraps the data into a `Trip` object with a generated ID (format `TRP-00001`) and calls `waitingQueue.enqueue()`, placing it at the back of the FIFO queue.
+
+3. **Driver assignment.** An admin (or the driver self-assigning) calls the assignment logic. The trip is dequeued from `waitingQueue` and pushed into `activeTrips` (the `DoublyLinkedList<Trip>`). The assigned driver's availability flag is set to `false`.
+
+4. **Trip completion.** When the driver finishes, `TripManager::finishTrip()` removes the trip from `activeTrips`, pushes it onto the `Stack<Trip>` history, updates the driver's earnings and trip count, and restores their availability.
+
+5. **Persistence.** On every state-changing action — and always on application exit — `FileManager` serialises all three trip collections (waiting, active, history) back to `assets/trips.txt`, and `AuthManager::saveAll()` flushes passengers and drivers to their respective text and binary files.

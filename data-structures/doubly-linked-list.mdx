@@ -1,0 +1,131 @@
+---
+title: "DoublyLinkedList<T>: Bidirectional List for Active Trips"
+sidebarTitle: "DoublyLinkedList"
+description: "DoublyLinkedList<T> stores active trips in LYNX. Each DNode holds prev and next pointers, enabling O(1) removal from both ends and bidirectional traversal."
+---
+
+`DoublyLinkedList<T>` is LYNX's bidirectional sequential container, defined in `include/DoublyLinkedList.h`. Unlike `LinkedList<T>`, which threads nodes together with a single `next` pointer, `DoublyLinkedList<T>` uses its own `DNode<T>` type — also defined in the same header — that carries both a `prev` and a `next` pointer. This two-direction linkage unlocks O(1) removal from the tail without any backward traversal. In LYNX, `TripManager` stores all currently active rides in a `DoublyLinkedList<Trip>` named `activeTrips`. Trips are appended when they begin, updated in-place while they run, and removed from either end as they complete or are cancelled. The class also provides two lambda helpers — `updateIf` and `countIf` — for batch mutation and conditional counting without exposing internal node pointers.
+
+## `DNode<T>` — The Internal Node
+
+`DoublyLinkedList<T>` does not reuse `Node<T>` from `Node.h`. It defines `DNode<T>` directly in the same header:
+
+```cpp
+template <typename T>
+class DNode {
+public:
+    T     data;
+    DNode<T>* prev;   // points to the preceding node
+    DNode<T>* next;
+
+    DNode(T _data) {
+        data = _data;
+        prev = nullptr;
+        next = nullptr;
+    }
+};
+```
+
+Both `prev` and `next` are set to `nullptr` by the constructor. `head->prev` and `tail->next` are always `nullptr` and serve as the boundary sentinels for all traversal loops.
+
+## Private Members
+
+| Member | Type | Role |
+|--------|------|------|
+| `head` | `DNode<T>*` | Points to the first node; `nullptr` when empty |
+| `tail` | `DNode<T>*` | Points to the last node; `tail->prev` is valid, enabling O(1) `popBack` |
+| `size` | `int` | Current element count; used for bounds-checking and `getSize()` |
+
+## Key Difference from `LinkedList<T>`
+
+In `LinkedList<T>`, `popBack` must walk the entire chain to locate the second-to-last node, giving it O(n) complexity. In `DoublyLinkedList<T>`, `tail->prev` is always valid, so the predecessor is instantly reachable and `popBack` completes in O(1). This matters for `activeTrips` because completed trips are frequently removed from the back of the list as they finish in FIFO order.
+
+## Method Reference
+
+| Method | Signature | Description | Complexity |
+|--------|-----------|-------------|------------|
+| `pushFront` | `void pushFront(T value)` | Inserts before the head; wires both `prev` and `next` | O(1) |
+| `pushBack` | `void pushBack(T value)` | Appends after the tail; wires both `prev` and `next` | O(1) |
+| `insert` | `void insert(int index, T value)` | Inserts at an arbitrary index with full bidirectional wiring | O(n) |
+| `popFront` | `void popFront()` | Removes the head node; clears `head->prev` on the new head | O(1) |
+| `popBack` | `void popBack()` | Removes the tail node using `tail->prev`; no traversal needed | O(1) |
+| `remove` | `void remove(int index)` | Removes at index; re-links both neighbours' `prev`/`next` | O(n) |
+| `get` | `T get(int index) const` | Returns the value at index; returns `T{}` on out-of-range | O(n) |
+| `front` | `T front() const` | Returns head value without removing it | O(1) |
+| `back` | `T back()` | Returns tail value without removing it | O(1) |
+| `search` | `int search(T value)` | Returns the first index of a matching element, or `-1` | O(n) |
+| `contains` | `bool contains(T value)` | Returns `true` if `search` finds the value | O(n) |
+| `count` | `int count(T value)` | Counts all nodes whose `data == value` | O(n) |
+| `reverse` | `void reverse()` | Reverses the list in-place by swapping every node's `prev`/`next` | O(n) |
+| `clear` | `void clear()` | Deletes all nodes and resets `head`, `tail`, and `size` | O(n) |
+| `print` | `void print()` | Prints the chain as `[ a -> b -> nullptr ]` to stdout | O(n) |
+| `updateIf` | `void updateIf(function<bool(T)> criterio, function<void(T&)> transformar)` | Mutates every element satisfying `criterio` using `transformar` | O(n) |
+| `countIf` | `int countIf(function<bool(T)> criterio)` | Counts elements for which `criterio` returns `true` | O(n) |
+
+## Complexity Summary
+
+| Operation | Time Complexity |
+|-----------|----------------|
+| `pushFront` | O(1) |
+| `pushBack` | O(1) |
+| `popFront` | O(1) |
+| `popBack` | O(1) |
+| `front` / `back` | O(1) |
+| `insert` | O(n) |
+| `remove` | O(n) |
+| `get` | O(n) |
+
+## Lambda Methods
+
+### `updateIf` — Batch In-Place Mutation
+
+```cpp
+void updateIf(function<bool(T)> criterio, function<void(T&)> transformar)
+```
+
+Traverses every node and, for each element where `criterio` returns `true`, calls `transformar` with a mutable reference to `data`. Because `transformar` receives a reference, changes persist directly in the list — no copy-back is required. This is used in `TripManager` to flip the status of active trips without removing and re-inserting them.
+
+```cpp
+// Mark all in-progress trips as completed
+activeTrips.updateIf(
+    [](Trip t)  { return t.getStatus() == "en_curso"; },
+    [](Trip& t) { t.setStatus("completado"); }
+);
+```
+
+### `countIf` — Conditional Count
+
+```cpp
+int countIf(function<bool(T)> criterio)
+```
+
+Counts how many elements satisfy `criterio` in a single pass. Returns an `int`. No elements are modified or removed.
+
+```cpp
+// How many trips are currently in progress?
+int enCurso = activeTrips.countIf([](Trip t) {
+    return t.getStatus() == "en_curso";
+});
+```
+
+## Usage Example
+
+```cpp
+DoublyLinkedList<Trip> activeTrips;
+activeTrips.pushBack(trip1);
+activeTrips.pushBack(trip2);
+
+// Count trips currently in progress
+int enCurso = activeTrips.countIf([](Trip t) {
+    return t.getStatus() == "en_curso";
+});
+
+// Mark all in-progress trips as completed
+activeTrips.updateIf(
+    [](Trip t)  { return t.getStatus() == "en_curso"; },
+    [](Trip& t) { t.setStatus("completado"); }
+);
+
+// Remove the completed trip from the back in O(1)
+activeTrips.popBack();
+```

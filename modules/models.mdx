@@ -1,0 +1,283 @@
+---
+title: "Domain Models: Trip, Passenger, Driver, and Vehicle"
+sidebarTitle: "Models"
+description: "LYNX's four domain models—Trip, Passenger, Driver, and Vehicle—define the data that flows through every data structure, with auto-generated IDs and pricing logic."
+---
+
+The domain models are the objects stored in LYNX's data structures. They are plain C++ classes with no external framework dependencies — each one provides getters, setters, and a handful of business-logic methods. `Passenger` and `Driver` both extend the shared `User` base class, while `Vehicle` is a value type embedded directly inside `Driver`.
+
+<CardGroup cols={2}>
+  <Card title="Trip" icon="route">
+    Represents a single ride request. Carries origin, destination, price, status, and references to both the passenger and driver by DNI.
+  </Card>
+  <Card title="Passenger" icon="user">
+    Extends `User`. Tracks lifetime spending and trip count. Owns an internal `Queue<Trip>*` for personal trip history. Auto-ID: `PAS-XXXX`.
+  </Card>
+  <Card title="Driver" icon="car">
+    Extends `User`. Tracks total earnings, availability, and rating. Embeds a `Vehicle` value. Auto-ID: `DRV-XXXX`.
+  </Card>
+  <Card title="Vehicle" icon="gauge">
+    Value type describing a car by plate, brand, model, color, and year. Used as the key in `BinarySearchTree`, ordered by plate.
+  </Card>
+</CardGroup>
+
+---
+
+## User (Base Class)
+
+`User` provides the three shared fields inherited by both `Passenger` and `Driver`.
+
+```cpp
+class User {
+protected:
+    string name;
+    string dni;
+    string password;
+public:
+    User(string name, string dni, string password);
+    string getName() const;
+    string getDni()  const;
+    string getPassword() const;
+    void setName(string _name);
+    void setDni(string _dni);
+    void setPassword(string _password);
+    bool checkPassword(string intento);
+    virtual string toString() const;
+    virtual void mostrar(int x, int& y);
+    string getCodigo();   // returns dni
+};
+```
+
+---
+
+## Trip
+
+Trip is the core data object that moves through `Queue → DoublyLinkedList → Stack` as it progresses through the ride lifecycle.
+
+### Fields
+
+| Field | Type | Notes |
+|---|---|---|
+| `tripId` | `string` | Format `TRP-XXXXX` — five zero-padded digits |
+| `origin` | `string` | Display name of the origin city |
+| `destination` | `string` | Display name of the destination city |
+| `price` | `float` | Calculated fare in Peruvian soles (S/) |
+| `status` | `string` | `"pendiente"` · `"en_curso"` · `"completado"` · `"cancelado"` |
+| `date` | `string` | Trip date as provided at creation (e.g. `"2024-06-15"`) |
+| `driverName` | `string` | Assigned driver's name; `"Por asignar"` until assigned |
+| `driverDni` | `string` | Assigned driver's DNI; empty until assigned |
+| `passengerDni` | `string` | DNI of the requesting passenger |
+| `tipe` | `int` | Service tier: `1` = Economy, `2` = Comfort, `3` = Premium |
+
+### Price Calculation
+
+`calcPrice` applies a per-km rate determined by service tier plus a fixed S/ 3.00 base cost:
+
+```cpp
+float calcPrice(int tipo, float km) {
+    setTipe(tipo);
+    float tarifa = 0.0f;
+    if (tipo == 1) tarifa = 1.20f;   // Economy  — S/ 1.20 per km
+    else if (tipo == 2) tarifa = 1.80f; // Comfort  — S/ 1.80 per km
+    else                tarifa = 2.50f; // Premium  — S/ 2.50 per km
+    price = tarifa * km + 3.0f;
+    return price;
+}
+```
+
+**Examples at 100 km:**
+- Economy: `1.20 × 100 + 3.00 = S/ 123.00`
+- Comfort: `1.80 × 100 + 3.00 = S/ 183.00`
+- Premium: `2.50 × 100 + 3.00 = S/ 253.00`
+
+### Status Transitions
+
+```
+pendiente  ──assignDriver──▶  en_curso  ──finishTrip──▶  completado
+    │                              │
+    └──cancelTrip──▶           cancelado ◀──cancelActiveTrip
+```
+
+### Getters and Setters
+
+| Getter | Setter | Type |
+|---|---|---|
+| `getTripId()` | `setTripId(string)` | `string` |
+| `getOrigin()` | `setOrigin(string)` | `string` |
+| `getDestination()` | `setDestination(string)` | `string` |
+| `getPrice()` | `setPrice(float)` | `float` |
+| `getStatus()` | `setStatus(string)` | `string` |
+| `getDate()` | `setDate(string)` | `string` |
+| `getDriverName()` | `setDriverName(string)` | `string` |
+| `getDriverDni()` | `setDriverDni(string)` | `string` |
+| `getPassengerDni()` | `setPassengerDni(string)` | `string` |
+| `getTipe()` | `setTipe(int)` | `int` |
+
+### Notable Methods
+
+- `estaCompletado()` — returns `true` if `status == "completado"`. Used by TripManager's recursive earnings calculator.
+- `getStatusLabel()` — returns a labelled status string (`[OK]`, `[XX]`, `[>>]`, `[--]`).
+- `sumarGastado(Trip[], int, int)` — recursive helper that sums prices of completed trips in an array.
+- `toString()` — single-line summary used in all list views.
+
+---
+
+## Passenger
+
+`Passenger` extends `User` and adds ride-history tracking. Each instance owns a heap-allocated `Queue<Trip>*` for its own personal trip queue.
+
+### Fields
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `passengerId` | `string` | auto | Format `PAS-XXXX` — four zero-padded digits |
+| `rating` | `float` | `5.0` | Updated on each driver rating via weighted average |
+| `totalTrips` | `int` | `0` | Incremented by `addTrip()` |
+| `totalSpent` | `float` | `0.0` | Cumulative fare of all completed trips |
+| `trips` | `Queue<Trip>*` | empty queue | Personal FIFO trip queue; deep-copied in copy constructor |
+
+### Auto-ID Generation
+
+IDs are generated from a `static int` counter using a zero-padded formatter:
+
+```cpp
+// Internal formatter
+static string formatPassengerId(int numero) {
+    ostringstream oss;
+    oss << "PAS-" << setw(4) << setfill('0') << numero;
+    return oss.str();
+}
+
+// Used in the main constructor
+passengerId = formatPassengerId(nextPassengerNumber()++);
+```
+
+After loading from file, `AuthManager` calls `Passenger::syncNextPassengerId(n)` to align the static counter with the highest existing ID.
+
+### Key Methods
+
+| Method | Description |
+|---|---|
+| `addTrip(float precio)` | Increments `totalTrips` and adds `precio` to `totalSpent` |
+| `updateRating(float nuevaCalif)` | Weighted average: `(rating × trips + nueva) / (trips + 1)` |
+| `login(string dni, string pass)` | Compares against stored credentials |
+| `rateDriver(int estrellas)` | Clamps `estrellas` to `[1, 5]` and returns as `float` |
+| `getNivelCliente()` | Lambda: `< S/50` → "Cliente nuevo", `< S/200` → "Cliente frecuente", else → "Cliente premium" |
+| `tieneCuenta()` | Returns `true` if `passengerId != ""` |
+| `extractPassengerNumber(string id)` | Static — parses the numeric part of a `PAS-XXXX` ID |
+| `generateNextPassengerId()` | Static — consumes the next counter value |
+| `syncNextPassengerId(int nextId)` | Static — sets the counter (called after file load) |
+
+---
+
+## Driver
+
+`Driver` extends `User` and adds availability state, earnings tracking, and an embedded `Vehicle`.
+
+### Fields
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `driverId` | `string` | auto | Format `DRV-XXXX` — four zero-padded digits |
+| `rating` | `float` | `5.0` | Updated on each passenger rating |
+| `isAvailable` | `bool` | `true` | `false` while a trip is in progress |
+| `totalTrips` | `int` | `0` | Incremented on `acceptRide()` |
+| `totalEarnings` | `float` | `0.0` | Gross earnings — platform takes 20% |
+| `vehicle` | `Vehicle` | default | Embedded value — no pointer |
+
+### Auto-ID Generation
+
+Uses the same static counter pattern as Passenger, with a `DRV-` prefix:
+
+```cpp
+static string formatDriverId(int numero) {
+    ostringstream oss;
+    oss << "DRV-" << setw(4) << setfill('0') << numero;
+    return oss.str();
+}
+```
+
+### Key Methods
+
+| Method | Description |
+|---|---|
+| `acceptRide(float precio)` | Sets `isAvailable = false`, increments `totalTrips`, adds to `totalEarnings` |
+| `finishRide()` | Sets `isAvailable = true` |
+| `updateRating(float nuevaCalif)` | Weighted average: `(rating × (trips-1) + nueva) / trips` |
+| `getNetEarnings()` | Lambda: returns `totalEarnings × 0.80` (after 20% platform cut) |
+| `ratePassenger(int estrellas)` | Clamps to `[1, 5]`, returns as `float` |
+| `login(string dni, string pass)` | Credential check |
+| `extractDriverNumber(string id)` | Static — parses the numeric part of a `DRV-XXXX` ID |
+| `generateNextDriverId()` | Static — consumes the next counter value |
+| `syncNextDriverId(int nextId)` | Static — sets the counter (called after file load) |
+
+### Getters and Setters
+
+| Getter | Setter | Type |
+|---|---|---|
+| `getDriverId()` | `setDriverId(string)` | `string` |
+| `getRating()` | `setRating(float)` | `float` |
+| `getIsAvailable()` | `setAvailable(bool)` | `bool` |
+| `getTotalTrips()` | `setTotalTrips(int)` | `int` |
+| `getTotalEarnings()` | `setTotalEarnings(float)` | `float` |
+| `getVehicle()` | `setVehicle(Vehicle)` | `Vehicle` |
+
+---
+
+## Vehicle
+
+`Vehicle` is a plain value type with no heap allocations. It is embedded inside `Driver` by value and is also inserted into `BinarySearchTree`, ordered by plate string.
+
+### Fields and Methods
+
+| Field | Getter | Setter | Type |
+|---|---|---|---|
+| `plate` | `getPlate()` / `getPlates()` | `setPlate(string)` | `string` |
+| `brand` | `getBrand()` | `setBrand(string)` | `string` |
+| `model` | `getModel()` | `setModel(string)` | `string` |
+| `color` | `getColor()` | `setColor(string)` | `string` |
+| `year` | `getYear()` / `getYears()` | `setYear(int)` | `int` |
+
+`toString()` produces a compact pipe-delimited string used when persisting drivers:
+
+```cpp
+string toString() const {
+    return plate + "|" + brand + " " + model + "|" + color + "|" + to_string(year);
+}
+// e.g. "ABC-123|Toyota Corolla|Blanco|2021"
+```
+
+`getCodigo()` returns `plate` and is used by the `BinarySearchTree` as the sort key.
+
+---
+
+## Model Creation Example
+
+```cpp
+// Create a vehicle
+Vehicle v("ABC-123", "Toyota", "Corolla", "Blanco", 2021);
+
+// Create a driver with auto-generated ID
+Driver d("María García", "87654321", "drv_pass", v);
+cout << d.getDriverId();  // DRV-0001
+
+// Create a passenger
+Passenger p("Juan Pérez", "12345678", "pax_pass");
+cout << p.getPassengerId(); // PAS-0001
+
+// Create a trip
+Trip t("TRP-00001", "Lima", "Cusco", 0.0f,
+       d.getName(), d.getDni(), p.getDni(), "2024-06-15");
+t.setTipe(2);  // comfort tier
+t.setPrice(t.calcPrice(2, 1100.0f));
+cout << t.getPrice();
+// calcPrice(2, 1100.0f) = 1.80 * 1100 + 3.0 = S/ 1983.00
+
+// Simulate a ride
+d.acceptRide(t.getPrice());    // isAvailable → false
+p.addTrip(t.getPrice());       // totalSpent += 1983.00
+d.finishRide();                // isAvailable → true
+
+// Net driver earnings (platform keeps 20%)
+cout << d.getNetEarnings();    // 1983.00 * 0.80 = 1586.40
+```

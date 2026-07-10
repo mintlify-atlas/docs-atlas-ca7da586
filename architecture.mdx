@@ -1,0 +1,142 @@
+---
+title: "LYNX System Architecture: Modules, Structures, and Data Flow"
+sidebarTitle: "Architecture"
+description: "Explore how LYNX connects its data structures, system modules, and user roles into a complete ride-management application."
+---
+
+LYNX is built in four distinct layers that sit on top of one another with strict directional dependencies. The bottom layer is a set of generic, header-only data structure templates — nothing in this layer knows about rides, users, or files. The system modules layer consumes those structures to implement authentication, trip lifecycle management, and persistence logic. Above that, domain models provide typed value objects (`Trip`, `Passenger`, `Driver`, `Vehicle`) that flow through the structures. At the top, the Windows Forms UI and console menus orchestrate user interactions and delegate all business logic downward. No layer reaches upward; the data structures never reference a form, and the forms never touch raw nodes.
+
+## Layer Overview
+
+| Layer | Components | Purpose |
+|-------|-----------|---------|
+| **Data Structures** | `Node`, `LinkedList`, `DoublyLinkedList`, `Queue`, `Stack`, `Heap`, `HashTable`, `AVLTree`, `BinarySearchTree`, `Graph` (all in `include/`) | Generic, reusable containers and algorithms implemented from scratch without STL. Provide the storage and traversal primitives that all other layers depend on. |
+| **System Modules** | `TripManager`, `AuthManager`, `FileManager` (in `src/` and `include/`) | Orchestrate business logic: trip lifecycle state transitions, user authentication and lookup, and reading/writing all data files. |
+| **Domain Models** | `Trip`, `Passenger`, `Driver`, `Vehicle`, `User` (in `src/`) | Plain value objects that carry the real-world data flowing through the structures. Each model exposes typed getters and setters; none contains algorithmic logic. |
+| **UI / Forms** | `MainMenuForm`, `PassengerMenuForm`, `DriverMenuForm`, `AdminMenuForm` (in `src/forms/`); `ConsoleMenu` (in `src/MainMenu.h`) | Windows Forms C++/CLI screens and a full console interface. Capture user input, invoke system-module methods, and render results. Shared UI state is brokered through `FormsStatus` in `src/library/`. |
+
+## Trip Lifecycle
+
+Every ride in LYNX passes through three data structures in sequence before it reaches permanent storage.
+
+<Steps>
+  <Step title="Passenger requests a trip → enqueued in Queue&lt;Trip&gt;">
+    When a passenger confirms a ride, `TripManager` creates a `Trip` object with a generated ID (e.g. `TRP-00001`), sets its status to `pendiente`, and calls:
+
+    ```cpp
+    waitingQueue.enqueue(trip);
+    ```
+
+    `waitingQueue` is a `Queue<Trip>` — a first-in, first-out structure. Every subsequent trip request appends to the back of the queue, guaranteeing that the earliest request is always the next to be served.
+  </Step>
+
+  <Step title="Driver assigned → trip moves to DoublyLinkedList&lt;Trip&gt;">
+    Assignment dequeues the trip from `waitingQueue` and inserts it into the active trips collection:
+
+    ```cpp
+    activeTrips.pushBack(trip);   // DoublyLinkedList<Trip>
+    ```
+
+    The trip's status is updated to `en_curso` and the assigned driver's `isAvailable` flag is set to `false`. The doubly-linked list allows the driver or admin to locate and remove the trip from any position in O(n) time without a secondary index.
+  </Step>
+
+  <Step title="Driver completes the ride → pushed onto Stack&lt;Trip&gt;">
+    Calling `TripManager::finishTrip()` removes the trip from `activeTrips`, updates the driver's `totalTrips` and `totalEarnings` counters, restores driver availability, and pushes the completed trip:
+
+    ```cpp
+    history.push(trip);   // Stack<Trip>
+    ```
+
+    The stack keeps the most recently completed trip at the top, so `history.peek()` always returns the last ride — used immediately when a passenger rates their driver.
+  </Step>
+
+  <Step title="Data persists to disk via FileManager">
+    After every state change, `ConsoleMenu::guardarDatos()` (console) or the equivalent Forms handler calls:
+
+    ```cpp
+    authMgr.saveAll();                              // writes passengers.txt, drivers.txt, passwords.bin
+    fileManager.guardarTripsTXT(allTrips);          // writes trips.txt
+    ```
+
+    `FileManager` serialises pending trips, active trips, and history trips into a single flat `assets/trips.txt` file. The `status` field (`pendiente` / `en_curso` / `completado`) is used on the next launch to redistribute each record back into the correct structure.
+  </Step>
+</Steps>
+
+## Authentication Flow
+
+`AuthManager` maintains two parallel representations of every user for different performance characteristics.
+
+The **primary store** is a `LinkedList<Passenger>` and a `LinkedList<Driver>`. These ordered lists support sequential operations: listing all users for the admin panel, rebuilding sorted views with `AdvancedSorts`, and iterating during file serialisation.
+
+The **fast-lookup store** is a `HashTable<Passenger>` (keyed by DNI) and a `HashTable<Driver>` (keyed by DNI). After loading from disk, `reconstruirHashPasajeros()` and `reconstruirHashConductores()` walk the linked lists and insert every record into the hash tables. From that point, any authentication check — login validation, duplicate-DNI detection at registration, profile retrieval — goes through the hash table and resolves in average-case O(1) rather than O(n).
+
+A third structure, `BinarySearchTree* vehicleTree`, mirrors all driver vehicles. It is rebuilt alongside the driver hash table and supports the administrator's vehicle lookup and sorted display features.
+
+When a passenger or driver record is mutated (name change, rating update, earnings update), both representations are updated in place: the linked list node is overwritten and the hash table entry is replaced to keep the two views consistent.
+
+## City Graph
+
+`TripManager` owns a `Graph<string>` called `cityGraph`, loaded at startup from two CSV files:
+
+- **`assets/cities.csv`** — declares vertices. Each row maps a numeric city ID to a human-readable ASCII name and country.
+- **`assets/connections.csv`** — declares weighted edges. Each row specifies a source city ID, destination city ID, and distance in kilometres.
+
+`FileManager::leerCitiesCSV()` and `FileManager::leerConnectionsCSV()` parse these files into `City` and `Connection` structs, which `TripManager` feeds into the graph's adjacency-list representation. When a passenger enters an origin and a destination, the graph runs Dijkstra's algorithm to calculate the shortest-path distance. That distance drives the fare calculation (`Trip::calcPrice(tipo, km)`), making route data a direct input to trip pricing.
+
+The graph is backed by `include/GraphAdjacencyList.h`, which implements the adjacency list, BFS, DFS, and Dijkstra entirely without STL containers.
+
+## Directory Structure
+
+```
+LYNX/
+├── include/                  # Data structure headers (template implementations)
+│   ├── Node.h
+│   ├── LinkedList.h
+│   ├── DoublyLinkedList.h
+│   ├── Queue.h
+│   ├── Stack.h
+│   ├── HashTable.h
+│   ├── Heap.h
+│   ├── AVLTree.h
+│   ├── BinarySearchTree.h
+│   ├── GraphAdjacencyList.h
+│   ├── AdvancedSorts.h
+│   ├── AdvancedOrders.h
+│   ├── SearchAlgorithms.h
+│   └── FileManager.h
+├── src/                      # System modules and domain models
+│   ├── main.cpp              # Entry point: launches console or Windows Forms mode
+│   ├── MainMenu.h            # ConsoleMenu class — full console UI
+│   ├── AdministratorMenu.h   # Admin console panel
+│   ├── AuthManager.h         # Authentication and user management
+│   ├── TripManager.h         # Trip lifecycle and city graph
+│   ├── Passenger.h           # Passenger domain model
+│   ├── Driver.h              # Driver domain model
+│   ├── Trip.h                # Trip domain model
+│   ├── Vehicle.h             # Vehicle domain model
+│   ├── User.h                # Base user model
+│   ├── forms/                # Windows Forms UI (.h, .cpp, .resx)
+│   │   ├── MainMenuForm.h/cpp/.resx
+│   │   ├── PassengerMenuForm.h/cpp/.resx
+│   │   ├── DriverMenuForm.h/cpp/.resx
+│   │   ├── AdminMenuForm.h/cpp/.resx
+│   │   ├── LoginPassengerForm.h/cpp/.resx
+│   │   ├── RegisterPassengerForm.h/cpp/.resx
+│   │   └── VehicleRegisterForm.h/cpp/.resx
+│   └── library/              # Shared helpers
+│       └── FormsStatus.h     # Global state shared across Windows Forms screens
+├── assets/                   # Default data files loaded at startup
+│   ├── admins.txt
+│   ├── drivers.txt
+│   ├── passengers.txt
+│   ├── trips.txt
+│   ├── passwords.bin
+│   ├── cities.csv
+│   └── connections.csv
+└── resources/                # Icons and images used by the Windows Forms UI
+    └── LYNX_image.png
+```
+
+<Note>
+  Every data structure in `include/` is **header-only**: the template class definition and all method implementations live entirely inside the `.h` file. This is required by the C++ template instantiation model — the compiler must see the full implementation at the point where a template is instantiated (e.g. `Queue<Trip>` in `TripManager.h`). There are no corresponding `.cpp` files for any structure in `include/`.
+</Note>

@@ -1,0 +1,137 @@
+{
+  "projectType": "general",
+  "projectName": "LYNX",
+  "projectDescription": "A C++ ride-management system that implements core data structures (linked list, queue, stack, AVL tree, hash table, graph, heap) from scratch—without the STL—to manage passengers, drivers, vehicles, and trips.",
+  "theme": "aspen",
+  "primaryColor": "#00599C",
+  "lightColor": "#3B82F6",
+  "darkColor": "#003F6B",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Data Structures",
+            "pages": [
+              "data-structures/node",
+              "data-structures/linked-list",
+              "data-structures/doubly-linked-list",
+              "data-structures/queue",
+              "data-structures/stack",
+              "data-structures/heap",
+              "data-structures/hash-table",
+              "data-structures/avl-tree",
+              "data-structures/binary-search-tree",
+              "data-structures/graph"
+            ]
+          },
+          {
+            "group": "Algorithms",
+            "pages": [
+              "algorithms/sorting",
+              "algorithms/searching"
+            ]
+          },
+          {
+            "group": "System Modules",
+            "pages": [
+              "modules/trip-manager",
+              "modules/auth-manager",
+              "modules/file-manager",
+              "modules/models"
+            ]
+          },
+          {
+            "group": "User Roles",
+            "pages": [
+              "roles/passenger",
+              "roles/driver",
+              "roles/administrator"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "All data structures implemented from scratch without STL containers",
+    "Role-based authentication system (Admin, Driver, Passenger)",
+    "Trip lifecycle management using Queue (waiting), DoublyLinkedList (active), and Stack (history)",
+    "Graph-based city routing with Dijkstra's shortest path algorithm",
+    "AVL Tree for O(log n) range-based trip/driver queries",
+    "Hash Table with chaining for O(1) average-case passenger and driver lookups",
+    "Binary Search Tree for vehicle management ordered by license plate",
+    "Multiple sorting algorithms: HeapSort, ShellSort, QuickSort, MergeSort, TimSort, CountingSort",
+    "Binary search (iterative and recursive) with lambda comparator support",
+    "File persistence: automatic save/load of passengers, drivers, trips, and admins"
+  ],
+  "publicApiSurface": [
+    "LinkedList<T>::pushFront(T value)",
+    "LinkedList<T>::pushBack(T value)",
+    "LinkedList<T>::insert(int index, T value)",
+    "LinkedList<T>::remove(int index)",
+    "LinkedList<T>::get(int index)",
+    "LinkedList<T>::search(T value)",
+    "LinkedList<T>::filter(function<bool(T)>)",
+    "LinkedList<T>::forEach(function<void(T)>)",
+    "LinkedList<T>::findFirst(function<bool(T)>)",
+    "LinkedList<T>::toArray() / fromArray(T*, int)",
+    "DoublyLinkedList<T>::pushFront / pushBack / insert / remove",
+    "DoublyLinkedList<T>::updateIf(criterio, transformar)",
+    "DoublyLinkedList<T>::countIf(function<bool(T)>)",
+    "Queue<T>::enqueue(T value)",
+    "Queue<T>::dequeue()",
+    "Queue<T>::getFront() / getBack()",
+    "Queue<T>::enqueueIf(T, function<bool(T)>)",
+    "Queue<T>::forEach(function<void(T)>)",
+    "Queue<T>::sumBy(function<float(T)>)",
+    "Stack<T>::push(T value) / pop() / peek()",
+    "Stack<T>::findInStack(function<bool(T)>)",
+    "Heap<T>::push(T) / pop() / peek() / buildHeap(T*, int)",
+    "HashTable<T>::insertar(string clave, T valor)",
+    "HashTable<T>::buscar(string clave, T& out)",
+    "HashTable<T>::contiene(string clave)",
+    "AVLTree<T>::insertar(T valor)",
+    "AVLTree<T>::buscarEnRango(T minimo, T maximo)",
+    "BinarySearchTree::insertar(Vehicle v)",
+    "BinarySearchTree::buscarPorPlaca(string placa, bool& found)",
+    "BinarySearchTree::eliminarPorPlaca(string placa, Vehicle& out)",
+    "BinarySearchTree::exportarOrdenado()",
+    "Graph<T>::addVertex(T value)",
+    "Graph<T>::addEdge(int from, int to, int weight)",
+    "Graph<T>::bfs(int start) / dfs(int start)",
+    "Graph<T>::dijkstra(int start)",
+    "Graph<T>::dijkstraDistance(int start, int target)",
+    "SearchAlgorithms<T>::binarySearchIterative(T* arr, int n, T target)",
+    "SearchAlgorithms<T>::binarySearchRecursive(T* arr, int n, T target)",
+    "AdvancedSorts<T>::heapSort(T* arr, int size)",
+    "AdvancedSorts<T>::shellSort(T* arr, int size)",
+    "AdvancedOrders::shellSortDriverssByEarnings(LinkedList<Driver>*)",
+    "AdvancedOrders::quickSortPassengersBySpent(LinkedList<Passenger>*)",
+    "AdvancedOrders::mergeSortTripsByPrice(Trip* arr, int n)",
+    "AdvancedOrders::timSortPassengersByTrips(LinkedList<Passenger>*)",
+    "AdvancedOrders::countingSortDriversByTrips(LinkedList<Driver>*)",
+    "TripManager::createTrip(...)",
+    "TripManager::assignDriver(string driverDni, AuthManager&)",
+    "TripManager::finishTrip(string tripId, AuthManager&)",
+    "TripManager::cancelTrip()",
+    "TripManager::searchTripByIdBinary(string code)",
+    "TripManager::buscarViajesPorRangoPrecio(float min, float max)",
+    "TripManager::calculateDistance(string origen, string destino)",
+    "TripManager::validateRoute(string origen, string destino)",
+    "AuthManager::registerUser(string name, string dni, string password)",
+    "AuthManager::registerDriver(string name, string dni, string password, Vehicle v)",
+    "AuthManager::loginUserValid(string dni, string password)",
+    "AuthManager::loginDriverValid(string dni, string password)",
+    "AuthManager::buscarConductoresPorRangoRating(float min, float max)"
+  ]
+}

@@ -1,47 +1,108 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with LYNX: Build and Run in Visual Studio"
+sidebarTitle: "Quickstart"
+description: "Learn how to clone, open, and run the LYNX ride-management system on Windows using Visual Studio 2022 in under five minutes."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
+This guide walks you through cloning the LYNX repository, opening it in Visual Studio 2022, and launching the application for the first time. By the end you will have the system running locally, be logged in as an administrator, and understand the layout of the default data files that seed the app on first boot.
 
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+<Info>
+  **Prerequisites — make sure these are in place before you begin:**
 
-## Prerequisites
+  - **Windows 10 or Windows 11** (64-bit). LYNX uses Windows-specific APIs (`SetConsoleOutputCP`, `GetModuleFileNameA`) and the Windows Forms runtime.
+  - **Visual Studio 2022** (any edition — Community is free). During installation, select the **Desktop development with C++** workload. This provides the MSVC compiler, linker, and Windows SDK headers that LYNX depends on.
+  - **\.NET desktop development** workload (also in the Visual Studio Installer). This is required for the Windows Forms designer and the C++/CLI runtime that bridges native C++ and the managed UI layer.
+</Info>
 
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+## Steps
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Clone the repository">
+    Open a terminal (PowerShell, Command Prompt, or Git Bash) and run:
 
     ```bash
-    npm install your-package
+    git clone https://github.com/yeremyacuna/LYNX.git
     ```
+
+    This creates a `LYNX/` folder containing the solution file, source directories, and the `assets/` data files that the app reads on startup.
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
 
-    ```bash
-    your-cli init
+  <Step title="Open the solution in Visual Studio 2022">
+    Navigate into the cloned folder and open `LYNX.slnx`:
+
     ```
+    cd LYNX
+    start LYNX.slnx
+    ```
+
+    Alternatively, launch Visual Studio 2022 first, choose **File → Open → Project/Solution**, and select `LYNX.slnx`. Visual Studio will load the C++/CLI project and restore all source file references automatically.
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
 
-    ```bash
-    your-cli start
+  <Step title="Set the build configuration to Debug / x64">
+    In the Visual Studio toolbar, use the two dropdowns near the top to confirm:
+
+    - **Configuration:** `Debug`
+    - **Platform:** `x64`
+
+    LYNX targets 64-bit Windows. Building as `x86` will produce linker errors because the Windows Forms and C++/CLI runtimes are wired for 64-bit in this project.
+  </Step>
+
+  <Step title="Build and run the application">
+    Press **F5** (or navigate to **Debug → Start Debugging**). Visual Studio will compile all source files, link the executable, and launch LYNX.
+
+    On first run you will see a small console prompt:
+
     ```
+    1. Consola
+    2. Windows Forms
+    Opción:
+    ```
+
+    - Enter `1` to use the full-screen console interface (keyboard-navigable menus rendered with ANSI block characters).
+    - Enter `2` to launch the Windows Forms GUI, which opens `MainMenuForm` as the root window.
+  </Step>
+
+  <Step title="Log in or register">
+    **As Administrator:** Use the credentials pre-seeded in `assets/admins.txt`. The default admin accounts include:
+
+    | Username | Password    |
+    |----------|-------------|
+    | Yeremy   | admin777    |
+    | Salvador | tyranitar   |
+    | Melissa  | heichahi    |
+
+    **As a Driver:** Credentials are stored in `assets/drivers.txt` in pipe-delimited format (`driverId|name|dni|password|...`). Open the file to find an existing DNI and password pair, or register a new driver from the main menu.
+
+    **As a Passenger:** Select **Register** from the Passenger menu. Provide a valid 8-digit DNI, a full name, and a password. The account is created immediately and written to `assets/passengers.txt`.
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## Default Data Files
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+All persistent state lives in the `assets/` directory, which is loaded automatically when the application starts and written back on exit or after every state-changing operation.
+
+| File | Format | Contents |
+|------|--------|----------|
+| `admins.txt` | Pipe-delimited text | Pre-seeded administrator accounts. Each line: `adminId\|username\|password`. |
+| `drivers.txt` | Pipe-delimited text | Registered driver records. Each line: `driverId\|name\|dni\|password\|rating\|isAvailable\|totalTrips\|totalEarnings\|plate\|brand\|model\|color\|year`. |
+| `passengers.txt` | Pipe-delimited text | Registered passenger records. Each line: `passengerId\|name\|dni\|password\|rating\|totalTrips\|totalSpent`. |
+| `cities.csv` | CSV | City nodes for the routing graph. Columns: `id`, `city`, `city_ascii`, `country`. |
+| `connections.csv` | CSV | Weighted edges between cities. Columns: `from_id`, `from_city_ascii`, `to_id`, `to_city_ascii`, `distance_km`. |
+| `trips.txt` | Pipe-delimited text | All trips across all states. Each line: `tripId\|origin\|destination\|price\|type\|status\|driverName\|driverDni\|passengerDni\|date`. Status is `pendiente`, `en_curso`, or `completado`. |
+| `passwords.bin` | Binary | Compact credential snapshot for all passengers and drivers. Each record is a fixed-size struct of `char` arrays (`tipo[16]`, `id[24]`, `dni[16]`, `password[32]`). Used by the admin audit view. |
+
+## First Steps
+
+Once LYNX is running, here are the four actions that exercise the core of the system end-to-end.
+
+**(a) Log in as Admin.** At the main menu choose **Administración**, then enter `Yeremy` and `admin777`. The administrator panel opens, giving access to passenger lists, driver lists, trip queues, statistics, and the binary password viewer.
+
+**(b) View the trip queue.** From the administrator panel, select **Listar Viajes**. You will see all trips grouped by status — pending trips in the `Queue<Trip>`, active trips from the `DoublyLinkedList<Trip>`, and completed trips from the `Stack<Trip>` history. If `assets/trips.txt` is empty on a fresh clone, the lists will be empty.
+
+**(c) Register a Passenger.** Return to the main menu and choose **Pasajero → Registrarme**. Enter an 8-digit DNI (e.g. `12345678`), a full name, and a password. LYNX validates the DNI format, checks for duplicates against the `HashTable<Passenger>`, and writes the new record to `assets/passengers.txt` immediately.
+
+**(d) Create a Trip.** Log in as the newly registered passenger, then choose **Solicitar un viaje**. Enter an origin city, a destination city, a trip type (1 = Eco, 2 = Standard, 3 = Premium), and a distance in kilometres. LYNX calculates the fare, shows a confirmation screen, and — on confirmation — calls `waitingQueue.enqueue()` to place the trip in the waiting queue.
+
+<Tip>
+  LYNX calls `guardarDatos()` — which flushes `AuthManager::saveAll()` and `FileManager::guardarTripsTXT()` — both on every significant action and unconditionally on application exit. This means you can close the app at any point and all registered users, drivers, and trip records will be fully restored the next time you launch it.
 </Tip>

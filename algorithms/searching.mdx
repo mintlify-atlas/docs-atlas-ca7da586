@@ -1,0 +1,88 @@
+---
+title: "Binary Search: Iterative and Recursive with Lambda Comparators"
+sidebarTitle: "Searching"
+description: "SearchAlgorithms<T> provides iterative and recursive binary search on sorted arrays, with optional lambda comparator for custom ordering on any field."
+---
+
+LYNX's `SearchAlgorithms<T>`, defined in `include/SearchAlgorithms.h`, provides four `static` binary search overloads that cover every search scenario in the system. The two default overloads rely on the type's `operator==` and `operator<`; the two custom-comparator overloads accept a `less` lambda so that any field of any type can be used as a search key without the type needing to define comparison operators. Both iterative and recursive forms are available — choose iterative to avoid stack overhead on large arrays, or recursive when clarity is preferred. All four overloads return the **index** of the matching element, or **-1** if the target is not found.
+
+<Warning>
+  Binary search requires the input array to be **sorted in the same order the comparator expects** before the call is made. If you sort with a `tripIdLess` comparator, you must search with that same `tripIdLess` comparator. Searching an unsorted array, or mixing comparators between sort and search, produces undefined results.
+</Warning>
+
+---
+
+## Method Reference
+
+### Default overloads (uses `operator==` and `operator<`)
+
+```cpp
+static int binarySearchIterative(T* arr, int n, T target);
+static int binarySearchRecursive(T* arr, int n, T target);
+```
+
+Both default overloads compare elements with the built-in `==` and `<` operators. The iterative version maintains `left` and `right` index pointers in a `while` loop — **O(log n)** time, **O(1)** space. The recursive version delegates to an internal helper that shrinks the search window on each call — **O(log n)** time, **O(log n)** stack space due to recursive call frames.
+
+### Custom-comparator overloads (lambda `less`)
+
+```cpp
+template<typename Compare>
+static int binarySearchIterative(T* arr, int n, T target, Compare less);
+
+template<typename Compare>
+static int binarySearchRecursive(T* arr, int n, T target, Compare less);
+```
+
+The comparator `less(a, b)` must return `true` if `a` should come before `b` in the sorted array — exactly the same convention used by the sorting comparators in `AdvancedSorts`. Equality is derived from the comparator: two elements are considered equal when **neither is strictly less than the other**.
+
+<Note>
+  With the lambda overloads, two elements `a` and `b` are considered equal when `!less(a, b) && !less(b, a)` — that is, neither element is strictly less than the other. This is the standard strict weak ordering contract. Your comparator must satisfy this contract; if `less(a, b)` is true, then `less(b, a)` must be false, and equality must be transitive.
+</Note>
+
+| Overload | Time | Space | Equality test |
+|---|---|---|---|
+| `binarySearchIterative` (default) | O(log n) | O(1) | `arr[mid] == target` |
+| `binarySearchRecursive` (default) | O(log n) | O(log n) | `arr[mid] == target` |
+| `binarySearchIterative` (comparator) | O(log n) | O(1) | `!less(a,b) && !less(b,a)` |
+| `binarySearchRecursive` (comparator) | O(log n) | O(log n) | `!less(a,b) && !less(b,a)` |
+
+---
+
+## Usage in LYNX
+
+`TripManager::searchTripByIdBinary(string code)` is the primary consumer of `SearchAlgorithms` in the codebase. It retrieves all trips, sorts them by ID using `heapSort` with a `tripIdLess` comparator, then calls `binarySearchRecursive` with the same comparator to locate the target trip.
+
+```cpp
+// Search for a trip by ID
+vector<Trip> sorted = getAllTripsSortedById(); // heapSort by tripId
+int n = (int)sorted.size();
+
+Trip target;
+target.setTripId("TRP-00042");
+
+auto tripIdLess = [](const Trip& a, const Trip& b) {
+    return a.getTripId() < b.getTripId();
+};
+
+int pos = SearchAlgorithms<Trip>::binarySearchRecursive(
+    sorted.data(), n, target, tripIdLess
+);
+
+if (pos != -1) {
+    Trip found = sorted[pos];
+    cout << found.toString();
+}
+```
+
+<Tip>
+  When using the lambda overloads, construct a "target" object with only the search key field set and leave all other fields default-initialized. Because the comparator only reads the key field (e.g., `getTripId()`), the binary search will find the correct element regardless of what the remaining fields contain. This avoids the need to know the full state of the object you're looking for.
+</Tip>
+
+---
+
+## Prerequisites and Pitfalls
+
+- **Sort before searching.** Call the appropriate sort from `AdvancedSorts<T>` or `AdvancedOrders<T>` on the same array with the same comparator immediately before calling binary search. Inserting new elements after sorting invalidates the sorted order.
+- **Consistent comparator.** The `less` lambda passed to the search must define the same ordering as the one used during sorting. Swapping comparators (e.g., ascending sort then descending search) will silently return wrong results or -1.
+- **Unique keys for predictable results.** Binary search returns the index of **one** matching element, not necessarily the first or last. If multiple elements share the same key, the returned index is implementation-defined. For unique keys (such as trip IDs), this is not a concern.
+- **Mid-point overflow.** The implementation uses `mid = left + (right - left) / 2` rather than `(left + right) / 2`, which avoids signed integer overflow for large arrays.

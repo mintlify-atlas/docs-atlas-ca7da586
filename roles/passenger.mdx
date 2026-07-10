@@ -1,0 +1,97 @@
+---
+title: "Passenger Role: Registration, Login, and Trip Booking"
+sidebarTitle: "Passenger"
+description: "Passengers in LYNX can register, log in by DNI, request trips between cities, view their trip history, and track total spending through the Passenger menu."
+---
+
+A Passenger is a registered traveller in the LYNX platform. Each Passenger is uniquely identified by their **DNI** (an 8-digit national identity number), which doubles as their login key. Once registered, a Passenger can request rides between cities, select a service tier, review their full trip history, and monitor how much they have spent over time. The Passenger object is stored in a `HashTable` for O(1) lookups and persisted to `assets/passengers.txt` between sessions.
+
+## Passenger Profile
+
+Every Passenger record contains the following fields, sourced directly from `Passenger.h`:
+
+| Field | Type | Description | Default |
+|---|---|---|---|
+| `passengerId` | `string` | Auto-generated identifier in the format `PAS-XXXX` | Generated on registration |
+| `name` | `string` | Full display name of the passenger | — |
+| `dni` | `string` | 8-digit national identity number used as the login key | — |
+| `password` | `string` | Login credential | — |
+| `rating` | `float` | Passenger rating, updated by drivers after each trip | `5.0` |
+| `totalTrips` | `int` | Cumulative number of completed trips | `0` |
+| `totalSpent` | `float` | Total fare paid across all completed trips | `0.0` |
+
+The ID counter is managed by the static helper `Passenger::syncNextPassengerId(int nextId)`, which re-synchronises the counter after loading saved data, ensuring IDs remain sequential even across restarts.
+
+## Registering a Passenger
+
+Passengers self-register from the application's main entry point. The system validates the DNI before creating the record.
+
+<Steps>
+  <Step title="Open the Passenger entry screen">
+    At the main menu, select **"Soy pasajero"** and then choose **"Registrarme"**.
+  </Step>
+  <Step title="Enter your full name">
+    Type your full name when prompted. This is stored in the `name` field of the `Passenger` object.
+  </Step>
+  <Step title="Enter your DNI">
+    Enter your 8-digit national ID. The system calls `AuthManager::validateDni(DNI)` — any DNI that is not exactly 8 digits is rejected immediately.
+  </Step>
+  <Step title="Set a password">
+    Choose a login password. The credential is stored via the base `User` class.
+  </Step>
+  <Step title="Account is created">
+    `AuthManager::registerPassenger(name, DNI, password)` generates a `PAS-XXXX` identifier using `Passenger::generateNextPassengerId()` and persists the new record to `assets/passengers.txt`. The in-memory `HashTable` is also updated for immediate lookups.
+  </Step>
+</Steps>
+
+## Logging In
+
+DNI is the login key. The system calls `AuthManager::loginUserValid(dni, password)`, which uses the internal `HashTable` to resolve the passenger record in O(1) time. If the DNI and password match, the Passenger object is loaded and the Passenger menu opens.
+
+```cpp
+// From MainMenu.h — validating a passenger login
+if (!authMgr.loginUserValid(DNI, password)) {
+    mostrarMensaje("Datos incorrectos");
+    option = 6;
+    break;
+}
+Passenger currentPassenger = authMgr.getUserByDni(DNI);
+```
+
+## Passenger Menu Actions
+
+After a successful login the following actions are available, as defined in `PassengerMenuForm.h` and `MainMenu.h`:
+
+- **Request a trip** — select an origin city and a destination city from the combo boxes. The system calls `TripManager::validateRoute(origin, destination)` to check graph connectivity and then calculates the distance via Dijkstra's algorithm (`TripManager::getCityNames()` populates the city lists). The passenger then picks a fare tier (Economy, Standard, or Premium) and confirms.
+- **View active trip** — displays the currently running trip, including route, fare tier, price, and the assigned driver.
+- **View trip history** — renders all completed trips for this passenger, filtered from the global history stack by the passenger's DNI. Each card shows the route and the fare paid.
+- **Rate last driver** — after a trip completes, the passenger can award 1–5 stars. The rating is applied via `AuthManager::updateDriverRating(driverDni, stars)`.
+- **Update profile** — allows the passenger to change their display name and password. Requires confirmation of the current password first.
+- **Log out** — returns to the main menu and closes the Passenger session.
+
+## Trip Fare Tiers
+
+When requesting a trip the passenger chooses one of three service tiers. The `tipe` field on the `Trip` object stores the numeric value:
+
+| Tier | `tipe` value | Description |
+|---|---|---|
+| Economy | `1` | Standard fare — base rate of S/ 1.20 per km plus a S/ 3.00 flat fee |
+| Comfort | `2` | Mid-range fare — base rate of S/ 1.80 per km plus a S/ 3.00 flat fee |
+| Premium | `3` | Luxury fare — base rate of S/ 2.50 per km plus a S/ 3.00 flat fee |
+
+The fare calculation is performed in `PassengerMenuForm::calcPrice(int tipo, float km)`:
+
+```cpp
+// From PassengerMenuForm.h
+float calcPrice(int tipo, float km) {
+    float tarifa = 0.0f;
+    if (tipo == 1) tarifa = 1.20f;
+    else if (tipo == 2) tarifa = 1.80f;
+    else tarifa = 2.50f;
+    return tarifa * km + 3.0f;
+}
+```
+
+<Note>
+  The `Queue<Trip>* trips` stored inside each `Passenger` object mirrors the global `TripManager` queue — it tracks trips belonging to this passenger specifically. It is populated by deep-copying trip objects so each passenger manages its own memory without sharing pointers with the global structures.
+</Note>

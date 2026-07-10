@@ -1,0 +1,140 @@
+---
+title: "LinkedList<T>: Singly-Linked List with Lambda Operations"
+sidebarTitle: "LinkedList"
+description: "LinkedList<T> is LYNX's singly-linked list. Supports O(1) front/back insert, lambda-based filter, forEach, findFirst, and array export/import."
+---
+
+`LinkedList<T>` is LYNX's general-purpose sequential container, defined in `include/LinkedList.h`. It is built from `Node<T>` nodes linked in a single forward direction, with dedicated `head` and `tail` pointers that keep both front and back insertions at O(1). Throughout the LYNX system, `LinkedList<T>` serves as the backbone of `AuthManager`, where it holds the registered passenger and driver rosters. Beyond the standard structural operations, the class exposes three lambda-powered methods — `forEach`, `filter`, and `findFirst` — that let callers express iteration and search logic inline without writing explicit traversal loops. Two additional methods, `toArray` and `fromArray`, bridge the linked list to raw C-style arrays for use with `AdvancedSorts`.
+
+## Private Members
+
+| Member | Type | Role |
+|--------|------|------|
+| `head` | `Node<T>*` | Points to the first node; `nullptr` when the list is empty |
+| `tail` | `Node<T>*` | Points to the last node; enables O(1) `pushBack` without traversal |
+| `size` | `int` | Tracks the current element count; used by bounds-checking and `getSize()` |
+
+## Method Reference
+
+| Method | Signature | Description | Complexity |
+|--------|-----------|-------------|------------|
+| `pushFront` | `void pushFront(T value)` | Inserts a new node before the current head | O(1) |
+| `pushBack` | `void pushBack(T value)` | Appends a new node after the current tail | O(1) |
+| `insert` | `void insert(int index, T value)` | Inserts at an arbitrary index; delegates to `pushFront`/`pushBack` at the boundaries | O(n) |
+| `popFront` | `void popFront()` | Removes and deletes the head node | O(1) |
+| `popBack` | `void popBack()` | Removes and deletes the tail node; requires traversal to find the new tail | O(n) |
+| `remove` | `void remove(int index)` | Removes the node at the given index; delegates at boundaries | O(n) |
+| `get` | `T get(int index) const` | Returns the value at the given index; returns `T{}` on out-of-range | O(n) |
+| `front` | `T front() const` | Returns the head value without removing it | O(1) |
+| `back` | `T back()` | Returns the tail value without removing it | O(1) |
+| `search` | `int search(T value)` | Returns the index of the first matching element, or `-1` | O(n) |
+| `contains` | `bool contains(T value)` | Returns `true` if `search` finds the value | O(n) |
+| `count` | `int count(T value)` | Counts all nodes whose `data == value` | O(n) |
+| `reverse` | `void reverse()` | Reverses the list in-place by re-wiring `next` pointers | O(n) |
+| `clear` | `void clear()` | Deletes all nodes and resets `head`, `tail`, and `size` | O(n) |
+| `print` | `void print()` | Prints the chain as `[ a -> b -> nullptr ]` to stdout | O(n) |
+| `printInfo` | `void printInfo()` | Prints `size`, `head->data`, and `tail->data` as a one-liner | O(1) |
+| `forEach` | `void forEach(function<void(T)> accion)` | Calls `accion` on every element's data | O(n) |
+| `filter` | `LinkedList<T>* filter(function<bool(T)> criterio)` | Returns a new heap-allocated list of elements satisfying `criterio` | O(n) |
+| `findFirst` | `T findFirst(function<bool(T)> criterio)` | Returns the first element satisfying `criterio`, or `T{}` | O(n) |
+| `toArray` | `T* toArray() const` | Exports all elements to a heap-allocated C-array; caller must `delete[]` | O(n) |
+| `fromArray` | `void fromArray(T* arr, int n)` | Clears the list and rebuilds it from `arr[0..n-1]` | O(n) |
+
+## Complexity Summary
+
+| Operation | Time Complexity |
+|-----------|----------------|
+| `pushFront` | O(1) |
+| `pushBack` | O(1) |
+| `front` / `back` | O(1) |
+| `insert` | O(n) |
+| `get` | O(n) |
+| `search` | O(n) |
+| `popBack` | O(n) |
+| `reverse` | O(n) |
+
+## Lambda Methods
+
+LYNX uses lambdas with `LinkedList<T>` to keep traversal logic co-located with the call site rather than scattered across helper functions. All three methods accept `std::function` objects, so standard lambdas, function pointers, and capturing closures all work.
+
+### `forEach` — Iterate Every Element
+
+```cpp
+void forEach(function<void(T)> accion)
+```
+
+Walks every node from `head` to `nullptr` and calls `accion` on each element's data. No elements are modified or removed. Ideal for printing, logging, or accumulating external state.
+
+```cpp
+// Print every driver's name to the console
+drivers.forEach([](Driver d) {
+    cout << d.getName() << "\n";
+});
+```
+
+### `filter` — Build a Filtered Sub-List
+
+```cpp
+LinkedList<T>* filter(function<bool(T)> criterio)
+```
+
+Creates a new `LinkedList<T>` on the heap containing only the elements for which `criterio` returns `true`. The original list is untouched. The caller is responsible for deleting the returned pointer when done.
+
+```cpp
+// Get only drivers who are currently available
+LinkedList<Driver>* available = drivers.filter([](Driver d) {
+    return d.getIsAvailable();
+});
+// ... use available ...
+delete available; // caller owns the result
+```
+
+### `findFirst` — Locate One Element
+
+```cpp
+T findFirst(function<bool(T)> criterio)
+```
+
+Returns the `data` of the first node for which `criterio` returns `true`. If no match exists, returns a value-initialized `T{}`. Used in `AuthManager` to look up a passenger by DNI without exposing internal iteration.
+
+```cpp
+// Find the passenger whose DNI matches the input
+Passenger p = passengers.findFirst([&](Passenger p) {
+    return p.getDni() == dni;
+});
+```
+
+## Array Interop
+
+`toArray()` and `fromArray()` exist to bridge `LinkedList<T>` with the `AdvancedSorts` utilities, which operate on raw C-style arrays rather than linked nodes.
+
+```cpp
+// Export to array, sort, then reload
+T* arr = myList.toArray();
+AdvancedSorts::mergeSort(arr, myList.getSize());
+myList.fromArray(arr, myList.getSize());
+delete[] arr; // caller must free the array
+```
+
+<Warning>
+  `toArray()` allocates memory with `new T[]` and returns `nullptr` if the list is empty. Always check the return value and call `delete[]` once you are done with the array — the list does not track or free it.
+</Warning>
+
+## Usage Example
+
+```cpp
+LinkedList<Driver> drivers;
+drivers.pushBack(Driver("Juan", "12345678", "pass", v));
+drivers.pushBack(Driver("Ana",  "87654321", "pass", v));
+
+// Find first available driver
+Driver best = drivers.findFirst([](Driver d) {
+    return d.getIsAvailable();
+});
+
+// Filter available drivers into a new list
+LinkedList<Driver>* available = drivers.filter([](Driver d) {
+    return d.getIsAvailable();
+});
+delete available; // caller owns the result
+```

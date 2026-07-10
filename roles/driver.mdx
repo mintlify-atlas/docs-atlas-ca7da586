@@ -1,0 +1,101 @@
+---
+title: "Driver Role: Availability, Ride Acceptance, and Earnings"
+sidebarTitle: "Driver"
+description: "Drivers in LYNX manage a vehicle, toggle availability, accept trips from the waiting queue, complete rides, and track their rating and total earnings."
+---
+
+A Driver is a service provider in the LYNX platform who is paired with a registered vehicle. Unlike Passengers who self-register, drivers are enrolled through the Administrator menu, which ensures every driver account includes verified vehicle details before being made available for trip assignment. Drivers are identified by their DNI, stored in a `LinkedList` in memory, and persisted to `assets/drivers.txt`. They are also indexed in a `BinarySearchTree` sorted by vehicle plate for fast plate-based lookups.
+
+## Driver Profile
+
+Every Driver record contains the following fields, sourced directly from `Driver.h`:
+
+| Field | Type | Description | Default |
+|---|---|---|---|
+| `driverId` | `string` | Auto-generated identifier in the format `DRV-XXXX` | Generated on registration |
+| `name` | `string` | Full display name of the driver | — |
+| `dni` | `string` | 8-digit national identity number used as the login key | — |
+| `password` | `string` | Login credential | — |
+| `rating` | `float` | Driver rating, updated by passengers after each trip | `5.0` |
+| `isAvailable` | `bool` | Whether the driver can currently accept new trips | `true` |
+| `totalTrips` | `int` | Cumulative number of completed trips | `0` |
+| `totalEarnings` | `float` | Gross cumulative earnings across all completed trips | `0.0` |
+| `vehicle` | `Vehicle` | The vehicle associated with this driver | — |
+
+The static helper `Driver::syncNextDriverId(int nextId)` re-synchronises the internal ID counter after loading persisted data, ensuring `DRV-XXXX` codes remain sequential across restarts.
+
+## Vehicle
+
+Each Driver has exactly one associated `Vehicle`. The `Vehicle` class (defined in `Vehicle.h`) carries five fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `plate` | `string` | Vehicle licence plate (e.g. `EQH-692`) |
+| `brand` | `string` | Manufacturer (e.g. `BMW`, `Toyota`) |
+| `model` | `string` | Model name (e.g. `Serie 1`, `Corolla`) |
+| `color` | `string` | Exterior colour |
+| `year` | `int` | Model year |
+
+Vehicles are indexed in a `BinarySearchTree` sorted by plate, which allows the system to perform efficient plate-based lookups without scanning the full driver list. The plate is also the key used by `Vehicle::getCodigo()` to integrate with generic sorted containers.
+
+## Driver Registration
+
+Driver registration is an admin-only action. The Administrator is responsible for gathering all necessary information, including vehicle details, before the account is created.
+
+<Steps>
+  <Step title="Open the Administrator menu">
+    Log in as an Administrator and navigate to the **Administrator Panel**. From there, select the driver registration workflow.
+  </Step>
+  <Step title="Enter driver details">
+    Provide the driver's full name, 8-digit DNI, and password. The system validates the DNI length via `AuthManager::validateDni(DNI)`.
+  </Step>
+  <Step title="Enter vehicle details">
+    Supply the vehicle's plate, brand, model, colour, and year. The year must be within an accepted range (2005–2026 in the console flow).
+  </Step>
+  <Step title="Account is created">
+    `AuthManager::registerDriver(name, DNI, password, vehicle)` constructs a `Driver` object with an auto-generated `DRV-XXXX` identifier, initialises `rating` to `5.0`, `isAvailable` to `true`, and `totalEarnings` / `totalTrips` to zero. The record is saved to `assets/drivers.txt`.
+  </Step>
+</Steps>
+
+## Driver Menu Actions
+
+After logging in with their DNI and password, the following actions are available to the driver, as defined in `DriverMenuForm.h` and `MainMenu.h`:
+
+- **Register manual trip** — the driver can log a completed trip manually by entering origin, destination, distance, and fare tier. The system creates a `Trip` with status `"completado"` and pushes it directly onto the history stack. Earnings and trip count are updated immediately via `Driver::acceptRide(price)` and `Driver::finishRide()`.
+- **View completed trips** — displays the driver's trip history, filtered from the global history stack by the driver's DNI.
+- **Toggle availability / finish trip** — if the driver has an active trip, this action calls `TripManager::finishTrip(tripId, authManager)` and marks the driver available. If no active trip exists, availability is set to `true` directly via `AuthManager::setDriverAvailability(dni, true)`.
+- **View earnings** — shows gross earnings, platform commission (20 %), and net earnings. The net value is computed by the lambda inside `Driver::getNetEarnings()`:
+
+```cpp
+// From Driver.h
+float getNetEarnings() {
+    auto calcularNeto = [](float bruto) -> float {
+        return bruto * 0.80f;
+    };
+    return calcularNeto(totalEarnings);
+}
+```
+
+- **View profile** — displays the driver's full summary including vehicle details.
+- **Log out** — ends the driver session and returns to the main menu.
+
+## Rating System
+
+A driver's rating starts at `5.0` and is updated each time a passenger rates them. The update formula is a running weighted average implemented in `Driver::updateRating(float nuevaCalif)`:
+
+```cpp
+// From Driver.h
+void updateRating(float nuevaCalif) {
+    auto calcPromedio = [](float actual, float nueva, int viajes) -> float {
+        if (viajes <= 1) return nueva;
+        return ((actual * (viajes - 1)) + nueva) / viajes;
+    };
+    rating = calcPromedio(rating, nuevaCalif, totalTrips);
+}
+```
+
+Ratings are persisted via `AuthManager::updateDriverRating(dni, newRating)`. For reporting purposes, administrators can sort all drivers by rating using `AuthManager::sortDriversByRating()` (ShellSort) or by earnings using a secondary ShellSort pass.
+
+<Tip>
+  `TripManager::matchBestDriver(authManager)` scans the full driver list and selects the available driver with the highest rating for automatic trip assignment. Keeping your rating high directly increases the probability of being matched first when a passenger requests a ride.
+</Tip>

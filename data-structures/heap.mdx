@@ -1,0 +1,97 @@
+---
+title: "Heap<T>: Binary Heap for Priority Ordering in LYNX"
+sidebarTitle: "Heap"
+description: "Heap<T> is a generic array-backed binary heap used in LYNX for driver rating priority and as the internal priority queue for Dijkstra's algorithm."
+---
+
+The `Heap<T>` class is a generic binary heap backed by a dynamically-resizing array. It operates as a max-heap by default — the element with the highest priority sits at the root and is always accessible in O(1). By swapping in a custom comparator lambda, you flip the ordering to produce a min-heap with no other changes to the interface. This dual-mode design is what allows the same data structure to serve both driver-rating prioritisation and Dijkstra's shortest-path algorithm inside LYNX.
+
+## Template Signature
+
+```cpp
+template <typename T, typename Compare = bool(*)(const T&, const T&)>
+class Heap
+```
+
+The second template parameter `Compare` defaults to a plain function pointer `bool(*)(const T&, const T&)`. When you pass a lambda, you must supply its type explicitly via `decltype`.
+
+## Private Members
+
+| Member | Type | Purpose |
+|---|---|---|
+| `data_` | `T*` | Raw heap array on the free store |
+| `size_` | `int` | Number of live elements |
+| `capacity_` | `int` | Allocated slots before a resize is needed |
+| `greater_` | `Compare` | Comparator — `greater_(a, b)` returns `true` if `a` has higher priority than `b` |
+
+## Method Reference
+
+| Method | Signature | Description |
+|---|---|---|
+| `push` | `void push(T value)` | Appends the value and sifts it up to restore the heap property |
+| `pop` | `void pop()` | Removes the top element, replaces it with the last, and sifts down |
+| `peek` | `T peek() const` | Returns the top element without removing it — O(1) |
+| `buildHeap` | `void buildHeap(T* arr, int n)` | Copies `n` elements from a raw array and heapifies in O(n) |
+| `clear` | `void clear()` | Resets `size_` to zero without freeing memory |
+| `isEmpty` | `bool isEmpty() const` | Returns `true` when the heap holds no elements |
+| `getSize` | `int getSize() const` | Current element count |
+| `getCapacity` | `int getCapacity() const` | Allocated capacity |
+| `print` | `void print() const` | Prints all elements in storage order |
+
+## Internal Re-balancing
+
+**siftUp** — called after `push`. Starting from the newly-added leaf, the element is repeatedly swapped with its parent as long as `greater_(child, parent)` is true. This restores the heap property from the bottom up in O(log n).
+
+**siftDown** — called after `pop`. The replacement element placed at index 0 is compared against both children; it swaps with the highest-priority child and repeats until it is in the correct position. This also runs in O(log n).
+
+## Dynamic Resizing
+
+The heap starts with the capacity you supply at construction (default: 16). The moment `size_ == capacity_` and a new element is pushed, the private `resize` method allocates a new array of `capacity_ * 2` slots, copies all existing elements, and frees the old block. Capacity only ever grows; it does not shrink automatically.
+
+## Comparator and Heap Order
+
+```cpp
+// Max-heap of integers (default behaviour: a > b)
+Heap<int> maxHeap;
+maxHeap.push(10);
+maxHeap.push(30);
+maxHeap.push(20);
+cout << maxHeap.peek(); // 30
+
+// Min-heap via lambda comparator
+auto minCmp = [](const int& a, const int& b) { return a < b; };
+Heap<int, decltype(minCmp)> minHeap(16, minCmp);
+minHeap.push(10);
+minHeap.push(5);
+minHeap.push(20);
+cout << minHeap.peek(); // 5
+
+// Build heap from existing array
+int arr[] = {3, 1, 4, 1, 5, 9};
+maxHeap.buildHeap(arr, 6);
+```
+
+## LYNX Usage
+
+`Heap<T>` appears in two separate contexts inside the codebase:
+
+1. **`AdvancedSorts::heapSort`** — performs an in-place O(n log n) sort on a plain array by conceptually treating it as a heap. The implementation calls `buildHeap` once then iteratively extracts the maximum to sort descending, without allocating a separate `Heap<T>` object.
+
+2. **`Graph::dijkstra` and `Graph::dijkstraDistance`** — both methods construct a local `Heap<DijkstraNode>` as a min-heap priority queue to always process the unvisited vertex with the shortest known distance first:
+   ```cpp
+   auto minCmp = [](const DijkstraNode& a, const DijkstraNode& b) {
+       return a.dist < b.dist;
+   };
+   Heap<DijkstraNode, decltype(minCmp)> heap(size_ * 2 + 1, minCmp);
+   ```
+
+## Complexity
+
+| Operation | Time Complexity |
+|---|---|
+| `push` | O(log n) |
+| `pop` | O(log n) |
+| `peek` | O(1) |
+| `buildHeap` | O(n) |
+| `clear` | O(1) |
+| `getSize` / `getCapacity` | O(1) |
